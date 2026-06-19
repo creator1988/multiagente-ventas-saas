@@ -1,0 +1,22 @@
+{
+  "crons": [
+    {
+      "path": "/api/escalability",
+      "schedule": "0 8 * * 1"
+    }
+  ],
+  "functions": {
+    "app/api/webhook/route.ts": {
+      "maxDuration": 30
+    },
+    "app/api/agent/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/monitor/route.ts": {
+      "maxDuration": 60
+    },
+    "app/api/escalability/route.ts": {
+      "maxDuration": 300
+    }
+  }
+}
