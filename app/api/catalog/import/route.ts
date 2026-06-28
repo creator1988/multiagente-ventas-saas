@@ -32,7 +32,10 @@ async function getOrCreateCategoria(empresa_id: string, nombre: string): Promise
 async function uploadImagen(base64: string, tipo: string, slug: string): Promise<string> {
   const buffer = Buffer.from(base64, 'base64');
   const ext = tipo === 'jpeg' ? 'jpg' : tipo;
-  const { url } = await put(`catalog/${slug}.${ext}`, buffer, { access: 'public' });
+  const { url } = await put(`catalog/${slug}.${ext}`, buffer, {
+    access: 'public',
+    token: process.env.CATALOG_BLOB_READ_WRITE_TOKEN,
+  });
   return url;
 }
 
