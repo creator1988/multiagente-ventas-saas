@@ -1,4 +1,4 @@
-import type { KapsoMessage, KapsoListMessage, KapsoReplyButtons } from '@/types';
+import type { KapsoListMessage, KapsoReplyButtons } from '@/types';
 
 const KAPSO_BASE_URL = 'https://api.kapso.io/v1';
 
