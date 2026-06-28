@@ -144,7 +144,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         for (const frag of oferta.fragmentos) {
           const nombreBuscar = frag.nombre_producto.trim();
-          let producto_id: string | null = null;
 
           const byNombre = rows(await sql`
             SELECT id FROM productos
@@ -153,30 +152,16 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             LIMIT 1
           `);
 
-          if (byNombre.length > 0) {
-            producto_id = byNombre[0].id as string;
-          } else {
-            // Placeholder — también marca con importacion_id para que el undo lo limpie
-            const catFallback = rows(await sql`
-              SELECT id FROM categorias WHERE empresa_id = ${empresa_id} LIMIT 1
-            `);
-            const cat_id = catFallback.length > 0 ? (catFallback[0].id as string) : null;
-            const nuevoRows = rows(await sql`
-              INSERT INTO productos
-                (empresa_id, categoria_id, nombre, descripcion, precio_lista,
-                 stock_disponible, activo, unidad_medida, importacion_id)
-              VALUES
-                (${empresa_id}, ${cat_id}, ${nombreBuscar}, ${nombreBuscar},
-                 0, 0, true, 'UND', ${importacion_id})
-              RETURNING id
-            `);
-            producto_id = nuevoRows[0].id as string;
-            resultado.productos_creados++;
+          if (byNombre.length === 0) {
+            resultado.errores.push(
+              `Combo "${oferta.nombre}" — componente no encontrado en catálogo: "${nombreBuscar}"`
+            );
+            continue;
           }
 
           await sql`
             INSERT INTO oferta_productos (oferta_id, producto_id, cantidad, precio_unitario_referencia)
-            VALUES (${oferta_id}, ${producto_id}, ${frag.cantidad}, ${frag.precio_unitario_referencia})
+            VALUES (${oferta_id}, ${byNombre[0].id as string}, ${frag.cantidad}, ${frag.precio_unitario_referencia})
           `;
         }
 
