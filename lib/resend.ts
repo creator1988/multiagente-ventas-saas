@@ -1,10 +1,12 @@
 import { Resend } from 'resend';
 
-if (!process.env.RESEND_API_KEY) {
-  throw new Error('RESEND_API_KEY no está definida');
-}
+let _resend: Resend | null = null;
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+function getClient(): Resend {
+  if (!process.env.RESEND_API_KEY) throw new Error('RESEND_API_KEY no está definida');
+  if (!_resend) _resend = new Resend(process.env.RESEND_API_KEY);
+  return _resend;
+}
 
 const FROM_EMAIL = 'noreply@distrisanty.com';
 
@@ -15,7 +17,7 @@ export async function notificarEscalado(params: {
   motivo: string;
   conversacion_id: string;
 }): Promise<void> {
-  await resend.emails.send({
+  await getClient().emails.send({
     from: FROM_EMAIL,
     to: params.asesor_email,
     subject: `[Distrisanty] Conversación escalada — ${params.cliente_nombre}`,
@@ -48,7 +50,7 @@ export async function notificarPedidoNuevo(params: {
     )
     .join('');
 
-  await resend.emails.send({
+  await getClient().emails.send({
     from: FROM_EMAIL,
     to: params.asesor_email,
     subject: `[Distrisanty] Nuevo pedido — ${params.cliente_nombre}`,

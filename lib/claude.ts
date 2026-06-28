@@ -1,12 +1,16 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-if (!process.env.ANTHROPIC_API_KEY) {
-  throw new Error('ANTHROPIC_API_KEY no está definida');
-}
+let _anthropic: Anthropic | null = null;
 
-export const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+function getClient(): Anthropic {
+  if (!process.env.ANTHROPIC_API_KEY) {
+    throw new Error('ANTHROPIC_API_KEY no está definida');
+  }
+  if (!_anthropic) {
+    _anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  }
+  return _anthropic;
+}
 
 export const CLAUDE_MODEL = 'claude-sonnet-4-6';
 export const MAX_TOKENS = 1024;
@@ -33,7 +37,7 @@ export async function completarConClaude(
     },
   ];
 
-  const response = await anthropic.messages.create({
+  const response = await getClient().messages.create({
     model: CLAUDE_MODEL,
     max_tokens: MAX_TOKENS,
     system: systemPrompt,

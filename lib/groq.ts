@@ -1,10 +1,12 @@
 import Groq from 'groq-sdk';
 
-if (!process.env.GROQ_API_KEY) {
-  throw new Error('GROQ_API_KEY no está definida');
-}
+let _groq: Groq | null = null;
 
-const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+function getClient(): Groq {
+  if (!process.env.GROQ_API_KEY) throw new Error('GROQ_API_KEY no está definida');
+  if (!_groq) _groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
+  return _groq;
+}
 
 const GROQ_MODEL = 'llama-3.1-8b-instant';
 
@@ -12,7 +14,7 @@ export async function responderConGroq(
   systemPrompt: string,
   userMessage: string
 ): Promise<string> {
-  const completion = await groq.chat.completions.create({
+  const completion = await getClient().chat.completions.create({
     model: GROQ_MODEL,
     messages: [
       { role: 'system', content: systemPrompt },
@@ -43,7 +45,7 @@ export async function fallbackGroq(
     { role: 'user', content: userMessage },
   ];
 
-  const completion = await groq.chat.completions.create({
+  const completion = await getClient().chat.completions.create({
     model: GROQ_MODEL,
     messages,
     max_tokens: 512,
