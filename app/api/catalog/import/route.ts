@@ -35,6 +35,7 @@ async function uploadImagen(base64: string, tipo: string, slug: string): Promise
   const { url } = await put(`catalog/${slug}.${ext}`, buffer, {
     access: 'public',
     token: process.env.CATALOG_BLOB_READ_WRITE_TOKEN,
+    allowOverwrite: true,
   });
   return url;
 }
