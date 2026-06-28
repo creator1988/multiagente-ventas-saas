@@ -1,6 +1,5 @@
-import { neon, neonConfig, type NeonQueryFunction } from '@neondatabase/serverless';
+import { neon, type NeonQueryFunction } from '@neondatabase/serverless';
 
-neonConfig.fetchConnectionCache = true;
 
 type SqlFn = NeonQueryFunction<false, false>;
 
