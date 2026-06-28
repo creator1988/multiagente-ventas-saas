@@ -17,6 +17,8 @@ export default function CatalogPage() {
   });
   const [limpiando, setLimpiando] = useState(false);
   const [resultadoLimpieza, setResultadoLimpieza] = useState<{ actualizados: number; total: number } | null>(null);
+  const [placeholderCount, setPlaceholderCount] = useState<number | null>(null);
+  const [eliminandoPlaceholders, setEliminandoPlaceholders] = useState(false);
 
   async function cargar() {
     setError(null);
@@ -41,7 +43,30 @@ export default function CatalogPage() {
     }
   }
 
-  useEffect(() => { cargar(); }, []);
+  useEffect(() => {
+    cargar();
+    // Detectar placeholders al cargar
+    fetch('/api/catalog/placeholders')
+      .then((r) => r.json())
+      .then((j: { data?: { count: number } }) => {
+        if (j.data && j.data.count > 0) setPlaceholderCount(j.data.count);
+      })
+      .catch(() => null);
+  }, []);
+
+  async function eliminarPlaceholders() {
+    setEliminandoPlaceholders(true);
+    try {
+      const res = await fetch('/api/catalog/placeholders', { method: 'DELETE' });
+      const json = await res.json() as { data?: { eliminados: number; enlaces_eliminados: number } };
+      if (json.data) {
+        setPlaceholderCount(null);
+        cargar();
+      }
+    } finally {
+      setEliminandoPlaceholders(false);
+    }
+  }
 
   async function limpiarNombres() {
     setLimpiando(true);
@@ -70,6 +95,26 @@ export default function CatalogPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
+      {placeholderCount !== null && (
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between">
+          <div>
+            <p className="text-sm font-medium text-amber-800">
+              {placeholderCount} productos vacíos detectados (precio $0, stock 0, sin SKU)
+            </p>
+            <p className="text-xs text-amber-600 mt-0.5">
+              Son componentes de combos que no se encontraron en el catálogo al importar.
+            </p>
+          </div>
+          <button
+            onClick={eliminarPlaceholders}
+            disabled={eliminandoPlaceholders}
+            className="ml-4 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium flex-shrink-0"
+          >
+            {eliminandoPlaceholders ? 'Eliminando…' : 'Eliminar estos productos'}
+          </button>
+        </div>
+      )}
+
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Catálogo de Productos</h1>
         <div className="flex items-center gap-3">
