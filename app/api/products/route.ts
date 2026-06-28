@@ -11,6 +11,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const activos = searchParams.get('activos') !== 'false';
   const ofertas = searchParams.get('ofertas') === 'true';
 
+  if (!empresa_id) {
+    return NextResponse.json({ error: 'EMPRESA_ID_DEFAULT no está configurada' }, { status: 500 });
+  }
+
   try {
     if (ofertas) {
       const rows = await sql`
@@ -19,29 +23,35 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ data: rows });
     }
 
+    // LEFT JOIN para incluir productos con categoria_id NULL (placeholders de combos)
     const rows = categoria_id
       ? await sql`
-          SELECT p.*, c.nombre AS categoria_nombre
+          SELECT p.*,
+                 COALESCE(c.nombre, 'Sin categoría') AS categoria_nombre
           FROM productos p
-          JOIN categorias c ON c.id = p.categoria_id
+          LEFT JOIN categorias c ON c.id = p.categoria_id
           WHERE p.empresa_id = ${empresa_id}
             AND p.categoria_id = ${categoria_id}
             AND p.activo = ${activos}
           ORDER BY p.nombre
         `
       : await sql`
-          SELECT p.*, c.nombre AS categoria_nombre
+          SELECT p.*,
+                 COALESCE(c.nombre, 'Sin categoría') AS categoria_nombre
           FROM productos p
-          JOIN categorias c ON c.id = p.categoria_id
+          LEFT JOIN categorias c ON c.id = p.categoria_id
           WHERE p.empresa_id = ${empresa_id}
             AND p.activo = ${activos}
-          ORDER BY c.nombre, p.nombre
+          ORDER BY COALESCE(c.nombre, 'Sin categoría'), p.nombre
         `;
 
     return NextResponse.json({ data: rows });
   } catch (error) {
     console.error('[products GET]', error);
-    return NextResponse.json({ error: 'Error consultando productos' }, { status: 500 });
+    return NextResponse.json(
+      { error: 'Error consultando productos', detalle: String(error) },
+      { status: 500 }
+    );
   }
 }
 
