@@ -10,6 +10,7 @@ export async function GET(): Promise<NextResponse> {
         ? `✓ "${process.env.EMPRESA_ID_DEFAULT}"`
         : '✗ FALTA (vacía)',
     },
+    blob_vars: Object.keys(process.env).filter((k) => k.includes('BLOB')),
   };
 
   try {
