@@ -43,6 +43,9 @@ async function uploadImagen(base64: string, tipo: string, slug: string): Promise
 // POST /api/catalog/import — importar productos y ofertas
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest): Promise<NextResponse> {
+  // TEMP: confirmar nombre exacto de variables BLOB — eliminar después
+  console.log('[BLOB_VARS]', Object.keys(process.env).filter((k) => k.includes('BLOB')));
+
   const body = (await request.json()) as {
     empresa_id?: string;
     productos: ProductoImport[];
