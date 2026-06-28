@@ -5,6 +5,7 @@ import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
 import type { ProductoImport, OfertaImport, FragmentoCombo, ResultadoImport, ResultadoUndo } from '@/types';
+import { quitarPrefijo, limpiarNombreProducto, limpiarParteCombo } from '@/lib/nombre-limpio';
 
 // ---------------------------------------------------------------------------
 // Tipos internos
@@ -131,17 +132,6 @@ async function extraerImagenesDesdeZip(
 // Helpers de parseo de filas
 // ---------------------------------------------------------------------------
 
-const REGEX_PREFIJO =
-  /^(PROMO\s+\d+\s+(LLEVA|INCLUYE|X\s+LLEVA|X\s+INCLUYE)\s*:?\s*|COMBO\s*:?\s*|INCLUYE\s*:?\s*)/i;
-
-function limpiarNombre(nombre: string): string {
-  return nombre.replace(REGEX_PREFIJO, '').trim();
-}
-
-function esCombo(nombre: string): boolean {
-  return nombre.includes('+');
-}
-
 function parsearFragmentos(nombre: string): FragmentoCombo[] {
   return nombre
     .split('+')
@@ -198,27 +188,26 @@ async function parsearExcel(
     const nombreOriginal = String(fila.NOMBRE ?? '').trim();
     if (!nombreOriginal) return;
 
-    const nombreLimpio = limpiarNombre(nombreOriginal);
-    const imagen = imagenesPorFila.get(idx); // idx 0-based = filas[idx]
+    const sinPrefijo = quitarPrefijo(nombreOriginal);
+    const imagen = imagenesPorFila.get(idx);
 
-    if (esCombo(nombreLimpio)) {
+    if (sinPrefijo.includes('+')) {
+      // Combo: limpiar cada parte individualmente
+      const partes = sinPrefijo.split('+').map((p) => p.trim()).filter(Boolean);
+      const nombreCombo = partes.map((p) => limpiarParteCombo(p)).slice(0, 3).join(' + ');
       ofertas.push({
-        nombre: nombreLimpio
-          .split('+')
-          .map((p) => p.trim())
-          .slice(0, 3)
-          .join(' + '),
+        nombre: nombreCombo,
         nombre_original: nombreOriginal,
         precio_combo: Number(fila.PRECIO ?? 0),
-        fragmentos: parsearFragmentos(nombreLimpio),
+        fragmentos: parsearFragmentos(sinPrefijo),
         imagen_base64: imagen?.data,
         imagen_tipo: imagen?.tipo,
-        fila_numero: idx + 2, // +2: header ocupa fila 1
+        fila_numero: idx + 2,
       });
     } else {
       productos.push({
         sku: String(fila.CODIGO ?? '').trim(),
-        nombre: nombreLimpio,
+        nombre: limpiarNombreProducto(nombreOriginal),
         nombre_original: nombreOriginal,
         categoria: String(fila.CATEGORIA ?? 'General').trim(),
         precio: Number(fila.PRECIO ?? 0),

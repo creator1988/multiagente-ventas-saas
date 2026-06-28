@@ -15,6 +15,8 @@ export default function CatalogPage() {
     precio_lista: 0,
     stock_disponible: 0,
   });
+  const [limpiando, setLimpiando] = useState(false);
+  const [resultadoLimpieza, setResultadoLimpieza] = useState<{ actualizados: number; total: number } | null>(null);
 
   async function cargar() {
     setError(null);
@@ -41,6 +43,21 @@ export default function CatalogPage() {
 
   useEffect(() => { cargar(); }, []);
 
+  async function limpiarNombres() {
+    setLimpiando(true);
+    setResultadoLimpieza(null);
+    try {
+      const res = await fetch('/api/catalog/clean-names', { method: 'POST' });
+      const json = await res.json() as { data?: { actualizados: number; total: number }; error?: string };
+      if (json.data) {
+        setResultadoLimpieza(json.data);
+        cargar();
+      }
+    } finally {
+      setLimpiando(false);
+    }
+  }
+
   async function guardar(id: string) {
     await fetch(`/api/products?id=${id}`, {
       method: 'PATCH',
@@ -53,15 +70,35 @@ export default function CatalogPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-gray-900">Catálogo de Productos</h1>
-        <Link
-          href="/dashboard/catalog/import"
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
-        >
-          Importar Excel
-        </Link>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={limpiarNombres}
+            disabled={limpiando || loading}
+            className="border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-50 px-3 py-2 rounded-lg text-sm"
+          >
+            {limpiando ? 'Limpiando…' : 'Limpiar nombres'}
+          </button>
+          <Link
+            href="/dashboard/catalog/import"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            Importar Excel
+          </Link>
+        </div>
       </div>
+
+      {resultadoLimpieza && (
+        <div className="mb-4 bg-green-50 border border-green-200 rounded-lg px-4 py-2.5 text-sm text-green-700 flex items-center justify-between">
+          <span>
+            Nombres actualizados: <strong>{resultadoLimpieza.actualizados}</strong> de {resultadoLimpieza.total} productos
+          </span>
+          <button onClick={() => setResultadoLimpieza(null)} className="text-green-500 hover:text-green-700 ml-4 text-xs">
+            ✕
+          </button>
+        </div>
+      )}
 
       {/* Estado de carga */}
       {loading && (
@@ -121,7 +158,12 @@ export default function CatalogPage() {
                 )}
                 <div className="min-w-0">
                   <p className="font-medium text-gray-900 truncate">{p.nombre}</p>
-                  <p className="text-sm text-gray-500">
+                  {p.descripcion && (
+                    <p className="text-xs text-gray-400 truncate mt-0.5" title={p.descripcion}>
+                      {p.descripcion}
+                    </p>
+                  )}
+                  <p className="text-sm text-gray-500 mt-0.5">
                     {p.categoria_nombre} · {p.unidad_medida}
                   </p>
                 </div>
