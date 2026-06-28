@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
-import { anthropic, CLAUDE_MODEL } from '@/lib/claude';
+import { getClient, CLAUDE_MODEL } from '@/lib/claude';
 import { ISA_SCORE_PROMPT } from '@/lib/agent-prompt';
 import type { ISAScoreResult } from '@/types';
 
@@ -70,7 +70,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       .map((m) => `[${m.rol}]: ${m.contenido}`)
       .join('\n');
 
-    const response = await anthropic.messages.create({
+    const response = await getClient().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 512,
       system: ISA_SCORE_PROMPT,

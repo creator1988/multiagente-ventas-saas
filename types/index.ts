@@ -222,6 +222,58 @@ export interface KapsoReplyButtons {
 export type KapsoMessage = KapsoTextMessage | KapsoListMessage | KapsoReplyButtons;
 
 // ============================================================
+// IMPORTACIÓN DE CATÁLOGO
+// ============================================================
+
+export interface FilaExcel {
+  CODIGO: string;
+  NOMBRE: string;
+  CATEGORIA: string;
+  PRECIO: number;
+  STOCK: number;
+  imagen_base64?: string;
+  imagen_tipo?: string;
+  fila_numero: number;
+}
+
+export interface ProductoImport {
+  sku: string;
+  nombre: string;
+  nombre_original: string;
+  categoria: string;
+  precio: number;
+  stock: number;
+  imagen_base64?: string;
+  imagen_tipo?: string;
+  fila_numero: number;
+}
+
+export interface FragmentoCombo {
+  texto_original: string;
+  nombre_producto: string;
+  cantidad: number;
+  precio_unitario_referencia: number;
+}
+
+export interface OfertaImport {
+  nombre: string;
+  nombre_original: string;
+  precio_combo: number;
+  fragmentos: FragmentoCombo[];
+  imagen_base64?: string;
+  imagen_tipo?: string;
+  fila_numero: number;
+}
+
+export interface ResultadoImport {
+  productos_creados: number;
+  productos_actualizados: number;
+  ofertas_creadas: number;
+  imagenes_subidas: number;
+  errores: string[];
+}
+
+// ============================================================
 // AGENTE
 // ============================================================
 

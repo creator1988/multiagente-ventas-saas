@@ -2,7 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 
 let _anthropic: Anthropic | null = null;
 
-function getClient(): Anthropic {
+export function getClient(): Anthropic {
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error('ANTHROPIC_API_KEY no está definida');
   }

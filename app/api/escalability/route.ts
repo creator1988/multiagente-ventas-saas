@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
-import { anthropic, CLAUDE_MODEL } from '@/lib/claude';
+import { getClient, CLAUDE_MODEL } from '@/lib/claude';
 
 const EMPRESA_ID = process.env.EMPRESA_ID_DEFAULT ?? '';
 
@@ -61,7 +61,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     };
 
     // Análisis con Claude
-    const response = await anthropic.messages.create({
+    const response = await getClient().messages.create({
       model: CLAUDE_MODEL,
       max_tokens: 1024,
       system: `Eres un analista de ventas para una distribuidora de consumo masivo en Colombia.
