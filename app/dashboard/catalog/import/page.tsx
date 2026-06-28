@@ -337,281 +337,279 @@ export default function ImportarCatalogoPage() {
     }
   };
 
-  // ---- Paso 1: Drop zone ----
-  if (paso === 1) {
-    return (
-      <div className="p-6 max-w-2xl mx-auto">
-        <div className="flex items-center gap-3 mb-6">
-          <Link href="/dashboard/catalog" className="text-gray-400 hover:text-gray-600 text-sm">
-            ← Catálogo
-          </Link>
-          <h1 className="text-2xl font-bold text-gray-900">Importar catálogo Excel</h1>
-        </div>
-
-        <div
-          onDrop={onDrop}
-          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-          onDragLeave={() => setDragOver(false)}
-          onClick={() => !cargando && inputRef.current?.click()}
-          className={`border-2 border-dashed rounded-xl p-16 text-center transition-colors ${
-            cargando
-              ? 'border-blue-400 bg-blue-50 cursor-wait'
-              : dragOver
-              ? 'border-blue-500 bg-blue-50 cursor-pointer'
-              : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50 cursor-pointer'
-          }`}
-        >
-          {cargando ? (
-            <>
-              <div className="inline-block w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
-              <p className="text-gray-600 font-medium">Procesando Excel e imágenes…</p>
-            </>
-          ) : (
-            <>
-              <div className="text-5xl mb-4">📊</div>
-              <p className="text-lg font-medium text-gray-700 mb-1">Arrastra tu archivo Excel aquí</p>
-              <p className="text-sm text-gray-500 mb-4">o haz clic para seleccionar</p>
-              <span className="inline-block bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
-                Seleccionar archivo .xlsx
-              </span>
-            </>
-          )}
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".xlsx"
-            className="hidden"
-            onChange={(e) => { if (e.target.files?.[0]) void procesarArchivo(e.target.files[0]); }}
-          />
-        </div>
-
-        <div className="mt-6 bg-gray-50 rounded-lg p-4">
-          <p className="text-sm font-medium text-gray-700 mb-2">Columnas requeridas en el Excel:</p>
-          <div className="flex flex-wrap gap-2">
-            {['CODIGO', 'NOMBRE', 'CATEGORIA', 'PRECIO', 'STOCK'].map((col) => (
-              <span key={col} className="bg-white border border-gray-200 text-gray-700 text-xs px-2 py-1 rounded font-mono">
-                {col}
-              </span>
-            ))}
-          </div>
-          <p className="text-xs text-gray-500 mt-3">
-            Filas cuyo NOMBRE contenga <strong>+</strong> se detectan automáticamente como combos.
-            Las imágenes incrustadas en el Excel se extraen y asocian a cada fila.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  // ---- Paso 2: Vista previa ----
-  if (paso === 2) {
-    const totalImagenes = [...productos, ...ofertas].filter((r) => r.imagen_base64).length;
-    return (
-      <div className="p-6 max-w-6xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Vista previa — {archivoNombre}</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {productos.length} productos · {ofertas.length} combos ·{' '}
-              <span className={totalImagenes > 0 ? 'text-green-600 font-medium' : ''}>
-                {totalImagenes} imágenes detectadas
-              </span>
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setPaso(1)}
-              className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm"
-            >
-              Cambiar archivo
-            </button>
-            <button
-              onClick={() => (ofertas.length > 0 ? setPaso(3) : setPaso(4))}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
-            >
-              {ofertas.length > 0 ? 'Confirmar combos →' : 'Revisar e importar →'}
-            </button>
-          </div>
-        </div>
-
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-3 py-3 text-left font-medium text-gray-600">Fila</th>
-                <th className="px-3 py-3 text-center font-medium text-gray-600">Imagen</th>
-                <th className="px-3 py-3 text-left font-medium text-gray-600">SKU</th>
-                <th className="px-3 py-3 text-left font-medium text-gray-600">Nombre</th>
-                <th className="px-3 py-3 text-left font-medium text-gray-600">Tipo</th>
-                <th className="px-3 py-3 text-left font-medium text-gray-600">Categoría</th>
-                <th className="px-3 py-3 text-right font-medium text-gray-600">Precio</th>
-                <th className="px-3 py-3 text-right font-medium text-gray-600">Stock</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {productos.map((p) => (
-                <tr key={p.fila_numero} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 text-gray-400 text-xs">{p.fila_numero}</td>
-                  <td className="px-3 py-2 text-center">
-                    <Miniatura base64={p.imagen_base64} tipo={p.imagen_tipo} />
-                  </td>
-                  <td className="px-3 py-2 font-mono text-xs text-gray-600">{p.sku}</td>
-                  <td className="px-3 py-2 text-gray-900 max-w-xs truncate" title={p.nombre}>
-                    {p.nombre}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">
-                      Producto
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-gray-600">{p.categoria}</td>
-                  <td className="px-3 py-2 text-right text-gray-900">
-                    ${Number(p.precio).toLocaleString('es-CO')}
-                  </td>
-                  <td className="px-3 py-2 text-right text-gray-600">{p.stock}</td>
-                </tr>
-              ))}
-              {ofertas.map((o) => (
-                <tr key={o.fila_numero} className="bg-purple-50/40 hover:bg-purple-50">
-                  <td className="px-3 py-2 text-gray-400 text-xs">{o.fila_numero}</td>
-                  <td className="px-3 py-2 text-center">
-                    <Miniatura base64={o.imagen_base64} tipo={o.imagen_tipo} />
-                  </td>
-                  <td className="px-3 py-2 text-gray-400 text-xs">—</td>
-                  <td className="px-3 py-2 text-gray-900 max-w-xs truncate" title={o.nombre}>
-                    {o.nombre}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">
-                      Combo
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-gray-400">—</td>
-                  <td className="px-3 py-2 text-right text-gray-900">
-                    ${Number(o.precio_combo).toLocaleString('es-CO')}
-                  </td>
-                  <td className="px-3 py-2 text-right text-gray-400">—</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  }
-
-  // ---- Paso 3: Confirmar componentes de combos ----
-  if (paso === 3) {
-    return (
-      <div className="p-6 max-w-3xl mx-auto">
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Confirmar componentes de combos</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              Revisa los productos que forman cada combo. Edita el nombre si es necesario.
-            </p>
-          </div>
-          <div className="flex gap-3">
-            <button
-              onClick={() => setPaso(2)}
-              className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm"
-            >
-              ← Volver
-            </button>
-            <button
-              onClick={() => setPaso(4)}
-              className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
-            >
-              Revisar e importar →
-            </button>
-          </div>
-        </div>
-
-        <div className="space-y-6">
-          {ofertas.map((oferta, oi) => (
-            <div key={oi} className="bg-white border border-gray-200 rounded-xl p-5">
-              <div className="flex items-start gap-4 mb-4">
-                {oferta.imagen_base64 && (
-                  <Miniatura base64={oferta.imagen_base64} tipo={oferta.imagen_tipo} />
-                )}
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full mr-2">
-                        Combo
-                      </span>
-                      <span className="font-semibold text-gray-900">{oferta.nombre}</span>
-                    </div>
-                    <span className="text-green-700 font-semibold">
-                      ${Number(oferta.precio_combo).toLocaleString('es-CO')}
-                    </span>
-                  </div>
-                  <p className="text-xs text-gray-400 mt-1 italic">
-                    &ldquo;{oferta.nombre_original}&rdquo;
-                  </p>
-                </div>
-              </div>
-
-              <div className="space-y-3">
-                {oferta.fragmentos.map((frag, fi) => (
-                  <div key={fi} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
-                    <span className="text-xs text-gray-400 w-5">{fi + 1}.</span>
-                    <div className="flex-1">
-                      <label className="text-xs text-gray-500 block mb-1">Nombre del producto</label>
-                      <input
-                        type="text"
-                        value={frag.nombre_producto}
-                        onChange={(e) =>
-                          actualizarFragmento(oi, fi, 'nombre_producto', e.target.value)
-                        }
-                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div className="w-24">
-                      <label className="text-xs text-gray-500 block mb-1">Cantidad</label>
-                      <input
-                        type="number"
-                        min={1}
-                        value={frag.cantidad}
-                        onChange={(e) =>
-                          actualizarFragmento(oi, fi, 'cantidad', parseInt(e.target.value) || 1)
-                        }
-                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                    <div className="w-28">
-                      <label className="text-xs text-gray-500 block mb-1">Precio ref.</label>
-                      <input
-                        type="number"
-                        min={0}
-                        value={frag.precio_unitario_referencia}
-                        onChange={(e) =>
-                          actualizarFragmento(
-                            oi,
-                            fi,
-                            'precio_unitario_referencia',
-                            parseFloat(e.target.value) || 0
-                          )
-                        }
-                        className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                      />
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  }
-
-  // ---- Paso 4: Resumen y confirmación / resultado ----
+  // Calculado aquí para evitar repetición en el render único
   const totalImagenes = [...productos, ...ofertas].filter((r) => r.imagen_base64).length;
 
-  if (resultado) {
-    return (
-      <div className="p-6 max-w-2xl mx-auto">
+  // Un solo return con keys explícitas por paso para que React haga
+  // unmount/remount completo en cada transición (evita el error removeChild
+  // al pasar de la tabla del paso 2 a los divs del paso 3).
+  return (
+    <>
+      {/* ---- Paso 1: Drop zone ---- */}
+      {paso === 1 && (
+        <div key="paso-1" className="p-6 max-w-2xl mx-auto">
+          <div className="flex items-center gap-3 mb-6">
+            <Link href="/dashboard/catalog" className="text-gray-400 hover:text-gray-600 text-sm">
+              ← Catálogo
+            </Link>
+            <h1 className="text-2xl font-bold text-gray-900">Importar catálogo Excel</h1>
+          </div>
+
+          <div
+            onDrop={onDrop}
+            onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+            onDragLeave={() => setDragOver(false)}
+            onClick={() => !cargando && inputRef.current?.click()}
+            className={`border-2 border-dashed rounded-xl p-16 text-center transition-colors ${
+              cargando
+                ? 'border-blue-400 bg-blue-50 cursor-wait'
+                : dragOver
+                ? 'border-blue-500 bg-blue-50 cursor-pointer'
+                : 'border-gray-300 hover:border-blue-400 hover:bg-gray-50 cursor-pointer'
+            }`}
+          >
+            {cargando ? (
+              <>
+                <div className="inline-block w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mb-4" />
+                <p className="text-gray-600 font-medium">Procesando Excel e imágenes…</p>
+              </>
+            ) : (
+              <>
+                <div className="text-5xl mb-4">📊</div>
+                <p className="text-lg font-medium text-gray-700 mb-1">Arrastra tu archivo Excel aquí</p>
+                <p className="text-sm text-gray-500 mb-4">o haz clic para seleccionar</p>
+                <span className="inline-block bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium">
+                  Seleccionar archivo .xlsx
+                </span>
+              </>
+            )}
+            <input
+              ref={inputRef}
+              type="file"
+              accept=".xlsx"
+              className="hidden"
+              onChange={(e) => { if (e.target.files?.[0]) void procesarArchivo(e.target.files[0]); }}
+            />
+          </div>
+
+          <div className="mt-6 bg-gray-50 rounded-lg p-4">
+            <p className="text-sm font-medium text-gray-700 mb-2">Columnas requeridas en el Excel:</p>
+            <div className="flex flex-wrap gap-2">
+              {['CODIGO', 'NOMBRE', 'CATEGORIA', 'PRECIO', 'STOCK'].map((col) => (
+                <span key={col} className="bg-white border border-gray-200 text-gray-700 text-xs px-2 py-1 rounded font-mono">
+                  {col}
+                </span>
+              ))}
+            </div>
+            <p className="text-xs text-gray-500 mt-3">
+              Filas cuyo NOMBRE contenga <strong>+</strong> se detectan automáticamente como combos.
+              Las imágenes incrustadas en el Excel se extraen y asocian a cada fila.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Paso 2: Vista previa ---- */}
+      {paso === 2 && (
+        <div key="paso-2" className="p-6 max-w-6xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Vista previa — {archivoNombre}</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                {productos.length} productos · {ofertas.length} combos ·{' '}
+                <span className={totalImagenes > 0 ? 'text-green-600 font-medium' : ''}>
+                  {totalImagenes} imágenes detectadas
+                </span>
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPaso(1)}
+                className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm"
+              >
+                Cambiar archivo
+              </button>
+              <button
+                onClick={() => (ofertas.length > 0 ? setPaso(3) : setPaso(4))}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                {ofertas.length > 0 ? 'Confirmar combos →' : 'Revisar e importar →'}
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto rounded-lg border border-gray-200">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50">
+                <tr>
+                  <th className="px-3 py-3 text-left font-medium text-gray-600">Fila</th>
+                  <th className="px-3 py-3 text-center font-medium text-gray-600">Imagen</th>
+                  <th className="px-3 py-3 text-left font-medium text-gray-600">SKU</th>
+                  <th className="px-3 py-3 text-left font-medium text-gray-600">Nombre</th>
+                  <th className="px-3 py-3 text-left font-medium text-gray-600">Tipo</th>
+                  <th className="px-3 py-3 text-left font-medium text-gray-600">Categoría</th>
+                  <th className="px-3 py-3 text-right font-medium text-gray-600">Precio</th>
+                  <th className="px-3 py-3 text-right font-medium text-gray-600">Stock</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {productos.map((p) => (
+                  <tr key={p.fila_numero} className="hover:bg-gray-50">
+                    <td className="px-3 py-2 text-gray-400 text-xs">{p.fila_numero}</td>
+                    <td className="px-3 py-2 text-center">
+                      <Miniatura base64={p.imagen_base64} tipo={p.imagen_tipo} />
+                    </td>
+                    <td className="px-3 py-2 font-mono text-xs text-gray-600">{p.sku}</td>
+                    <td className="px-3 py-2 text-gray-900 max-w-xs truncate" title={p.nombre}>
+                      {p.nombre}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="bg-green-100 text-green-700 text-xs px-2 py-0.5 rounded-full">
+                        Producto
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-600">{p.categoria}</td>
+                    <td className="px-3 py-2 text-right text-gray-900">
+                      ${Number(p.precio).toLocaleString('es-CO')}
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-600">{p.stock}</td>
+                  </tr>
+                ))}
+                {ofertas.map((o) => (
+                  <tr key={o.fila_numero} className="bg-purple-50/40 hover:bg-purple-50">
+                    <td className="px-3 py-2 text-gray-400 text-xs">{o.fila_numero}</td>
+                    <td className="px-3 py-2 text-center">
+                      <Miniatura base64={o.imagen_base64} tipo={o.imagen_tipo} />
+                    </td>
+                    <td className="px-3 py-2 text-gray-400 text-xs">—</td>
+                    <td className="px-3 py-2 text-gray-900 max-w-xs truncate" title={o.nombre}>
+                      {o.nombre}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full">
+                        Combo
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-gray-400">—</td>
+                    <td className="px-3 py-2 text-right text-gray-900">
+                      ${Number(o.precio_combo).toLocaleString('es-CO')}
+                    </td>
+                    <td className="px-3 py-2 text-right text-gray-400">—</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ---- Paso 3: Confirmar componentes de combos ---- */}
+      {paso === 3 && (
+        <div key="paso-3" className="p-6 max-w-3xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Confirmar componentes de combos</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Revisa los productos que forman cada combo. Edita el nombre si es necesario.
+              </p>
+            </div>
+            <div className="flex gap-3">
+              <button
+                onClick={() => setPaso(2)}
+                className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm"
+              >
+                ← Volver
+              </button>
+              <button
+                onClick={() => setPaso(4)}
+                className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-medium"
+              >
+                Revisar e importar →
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            {ofertas.map((oferta, oi) => (
+              <div key={oi} className="bg-white border border-gray-200 rounded-xl p-5">
+                <div className="flex items-start gap-4 mb-4">
+                  {oferta.imagen_base64 && (
+                    <Miniatura base64={oferta.imagen_base64} tipo={oferta.imagen_tipo} />
+                  )}
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <span className="bg-purple-100 text-purple-700 text-xs px-2 py-0.5 rounded-full mr-2">
+                          Combo
+                        </span>
+                        <span className="font-semibold text-gray-900">{oferta.nombre}</span>
+                      </div>
+                      <span className="text-green-700 font-semibold">
+                        ${Number(oferta.precio_combo).toLocaleString('es-CO')}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-400 mt-1 italic">
+                      &ldquo;{oferta.nombre_original}&rdquo;
+                    </p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {oferta.fragmentos.map((frag, fi) => (
+                    <div key={fi} className="flex items-center gap-3 bg-gray-50 rounded-lg p-3">
+                      <span className="text-xs text-gray-400 w-5">{fi + 1}.</span>
+                      <div className="flex-1">
+                        <label className="text-xs text-gray-500 block mb-1">Nombre del producto</label>
+                        <input
+                          type="text"
+                          value={frag.nombre_producto}
+                          onChange={(e) =>
+                            actualizarFragmento(oi, fi, 'nombre_producto', e.target.value)
+                          }
+                          className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="w-24">
+                        <label className="text-xs text-gray-500 block mb-1">Cantidad</label>
+                        <input
+                          type="number"
+                          min={1}
+                          value={frag.cantidad}
+                          onChange={(e) =>
+                            actualizarFragmento(oi, fi, 'cantidad', parseInt(e.target.value) || 1)
+                          }
+                          className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                      <div className="w-28">
+                        <label className="text-xs text-gray-500 block mb-1">Precio ref.</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={frag.precio_unitario_referencia}
+                          onChange={(e) =>
+                            actualizarFragmento(
+                              oi,
+                              fi,
+                              'precio_unitario_referencia',
+                              parseFloat(e.target.value) || 0
+                            )
+                          }
+                          className="w-full border border-gray-300 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ---- Paso 4: Resultado (tras importar) ---- */}
+      {paso === 4 && resultado && (
+        <div key="paso-4-result" className="p-6 max-w-2xl mx-auto">
         <div className="text-center mb-8">
           <div className="text-5xl mb-3">✅</div>
           <h1 className="text-2xl font-bold text-gray-900">¡Importación completada!</h1>
@@ -670,57 +668,58 @@ export default function ImportarCatalogoPage() {
             Importar otro archivo
           </button>
         </div>
-      </div>
-    );
-  }
-
-  // Paso 4 — confirmación antes de importar
-  return (
-    <div className="p-6 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">Confirmar importación</h1>
-        <button
-          onClick={() => setPaso(ofertas.length > 0 ? 3 : 2)}
-          className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm"
-        >
-          ← Volver
-        </button>
-      </div>
-
-      <div className="grid grid-cols-3 gap-4 mb-8">
-        <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
-          <p className="text-3xl font-bold text-green-700">{productos.length}</p>
-          <p className="text-sm text-green-600 mt-1">Productos</p>
         </div>
-        <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 text-center">
-          <p className="text-3xl font-bold text-purple-700">{ofertas.length}</p>
-          <p className="text-sm text-purple-600 mt-1">Combos</p>
-        </div>
-        <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 text-center">
-          <p className="text-3xl font-bold text-orange-700">{totalImagenes}</p>
-          <p className="text-sm text-orange-600 mt-1">Imágenes</p>
-        </div>
-      </div>
+      )}
 
-      <p className="text-sm text-gray-600 mb-6">
-        Al confirmar, se crearán o actualizarán los registros en Neon y se subirán las imágenes a
-        Vercel Blob.
-      </p>
+      {/* ---- Paso 4: Confirmación antes de importar ---- */}
+      {paso === 4 && !resultado && (
+        <div key="paso-4-confirm" className="p-6 max-w-2xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-2xl font-bold text-gray-900">Confirmar importación</h1>
+            <button
+              onClick={() => setPaso(ofertas.length > 0 ? 3 : 2)}
+              className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm"
+            >
+              ← Volver
+            </button>
+          </div>
 
-      <button
-        onClick={importar}
-        disabled={cargando}
-        className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-3.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
-      >
-        {cargando ? (
-          <>
-            <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-            Importando…
-          </>
-        ) : (
-          'Importar a catálogo'
-        )}
-      </button>
-    </div>
+          <div className="grid grid-cols-3 gap-4 mb-8">
+            <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
+              <p className="text-3xl font-bold text-green-700">{productos.length}</p>
+              <p className="text-sm text-green-600 mt-1">Productos</p>
+            </div>
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 text-center">
+              <p className="text-3xl font-bold text-purple-700">{ofertas.length}</p>
+              <p className="text-sm text-purple-600 mt-1">Combos</p>
+            </div>
+            <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 text-center">
+              <p className="text-3xl font-bold text-orange-700">{totalImagenes}</p>
+              <p className="text-sm text-orange-600 mt-1">Imágenes</p>
+            </div>
+          </div>
+
+          <p className="text-sm text-gray-600 mb-6">
+            Al confirmar, se crearán o actualizarán los registros en Neon y se subirán las imágenes a
+            Vercel Blob.
+          </p>
+
+          <button
+            onClick={importar}
+            disabled={cargando}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white px-4 py-3.5 rounded-xl text-sm font-semibold flex items-center justify-center gap-2"
+          >
+            {cargando ? (
+              <>
+                <span className="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                Importando…
+              </>
+            ) : (
+              'Importar a catálogo'
+            )}
+          </button>
+        </div>
+      )}
+    </>
   );
 }
