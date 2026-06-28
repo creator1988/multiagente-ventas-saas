@@ -28,9 +28,9 @@ export interface Categoria {
   id: string;
   empresa_id: string;
   nombre: string;
-  descripcion?: string;
-  imagen_url?: string;
-  activa: boolean;
+  icono_url?: string;
+  orden_display?: number;
+  activo: boolean;
 }
 
 export interface Producto {
@@ -51,10 +51,13 @@ export interface Oferta {
   empresa_id: string;
   nombre: string;
   descripcion?: string;
-  descuento_porcentaje: number;
-  fecha_inicio: Date;
-  fecha_fin: Date;
-  activa: boolean;
+  precio_combo?: number;
+  url_imagen?: string;
+  activo: boolean;
+  orden_display?: number;
+  importacion_id?: string;
+  creado_at?: Date;
+  actualizado_at?: Date;
 }
 
 export interface Pedido {

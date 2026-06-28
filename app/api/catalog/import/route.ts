@@ -21,7 +21,7 @@ async function runMigrations(): Promise<void> {
 
 async function getOrCreateCategoria(empresa_id: string, nombre: string): Promise<string> {
   const result = rows(await sql`
-    INSERT INTO categorias (empresa_id, nombre, activa)
+    INSERT INTO categorias (empresa_id, nombre, activo)
     VALUES (${empresa_id}, ${nombre}, true)
     ON CONFLICT (empresa_id, nombre) DO UPDATE SET nombre = EXCLUDED.nombre
     RETURNING id
@@ -128,11 +128,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         const ofertaRows = rows(await sql`
           INSERT INTO ofertas
-            (empresa_id, nombre, descripcion, precio_combo, imagen_url,
-             descuento_porcentaje, fecha_inicio, fecha_fin, activa, importacion_id)
+            (empresa_id, nombre, descripcion, precio_combo, url_imagen, activo, importacion_id)
           VALUES
             (${empresa_id}, ${oferta.nombre}, ${oferta.nombre_original}, ${oferta.precio_combo},
-             ${imagen_url}, 0, NOW(), NOW() + INTERVAL '1 year', true, ${importacion_id})
+             ${imagen_url}, true, ${importacion_id})
           RETURNING id
         `);
         const oferta_id = ofertaRows[0].id as string;
