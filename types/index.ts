@@ -266,11 +266,17 @@ export interface OfertaImport {
 }
 
 export interface ResultadoImport {
+  importacion_id: string;
   productos_creados: number;
   productos_actualizados: number;
   ofertas_creadas: number;
   imagenes_subidas: number;
   errores: string[];
+}
+
+export interface ResultadoUndo {
+  productos_eliminados: number;
+  ofertas_eliminadas: number;
 }
 
 // ============================================================

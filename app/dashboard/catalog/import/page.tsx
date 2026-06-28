@@ -4,7 +4,7 @@ import { useCallback, useRef, useState } from 'react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
 import JSZip from 'jszip';
-import type { ProductoImport, OfertaImport, FragmentoCombo, ResultadoImport } from '@/types';
+import type { ProductoImport, OfertaImport, FragmentoCombo, ResultadoImport, ResultadoUndo } from '@/types';
 
 // ---------------------------------------------------------------------------
 // Tipos internos
@@ -264,6 +264,10 @@ export default function ImportarCatalogoPage() {
   const [cargando, setCargando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoImport | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [confirmarUndo, setConfirmarUndo] = useState(false);
+  const [undoando, setUndoando] = useState(false);
+  const [undoResultado, setUndoResultado] = useState<ResultadoUndo | null>(null);
+  const [undoError, setUndoError] = useState<string | null>(null);
 
   const procesarArchivo = useCallback(async (file: File) => {
     if (!file.name.endsWith('.xlsx')) {
@@ -334,6 +338,29 @@ export default function ImportarCatalogoPage() {
       alert(`Error de red: ${String(err)}`);
     } finally {
       setCargando(false);
+    }
+  };
+
+  const deshacerImportacion = async () => {
+    if (!resultado?.importacion_id) return;
+    setUndoando(true);
+    setUndoError(null);
+    try {
+      const res = await fetch(
+        `/api/catalog/import?importacion_id=${resultado.importacion_id}`,
+        { method: 'DELETE' }
+      );
+      const json = (await res.json()) as { data?: ResultadoUndo; error?: string };
+      if (json.data) {
+        setUndoResultado(json.data);
+        setConfirmarUndo(false);
+      } else {
+        setUndoError(json.error ?? 'Error desconocido');
+      }
+    } catch (err) {
+      setUndoError(String(err));
+    } finally {
+      setUndoando(false);
     }
   };
 
@@ -610,64 +637,146 @@ export default function ImportarCatalogoPage() {
       {/* ---- Paso 4: Resultado (tras importar) ---- */}
       {paso === 4 && resultado && (
         <div key="paso-4-result" className="p-6 max-w-2xl mx-auto">
-        <div className="text-center mb-8">
-          <div className="text-5xl mb-3">✅</div>
-          <h1 className="text-2xl font-bold text-gray-900">¡Importación completada!</h1>
-        </div>
+          <div className="text-center mb-8">
+            <div className="text-5xl mb-3">{undoResultado ? '↩️' : '✅'}</div>
+            <h1 className="text-2xl font-bold text-gray-900">
+              {undoResultado ? 'Importación deshecha' : '¡Importación completada!'}
+            </h1>
+          </div>
 
-        <div className="grid grid-cols-2 gap-4 mb-6">
-          <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
-            <p className="text-3xl font-bold text-green-700">{resultado.productos_creados}</p>
-            <p className="text-sm text-green-600 mt-1">Productos creados</p>
-          </div>
-          <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
-            <p className="text-3xl font-bold text-blue-700">{resultado.productos_actualizados}</p>
-            <p className="text-sm text-blue-600 mt-1">Productos actualizados</p>
-          </div>
-          <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 text-center">
-            <p className="text-3xl font-bold text-purple-700">{resultado.ofertas_creadas}</p>
-            <p className="text-sm text-purple-600 mt-1">Combos creados</p>
-          </div>
-          <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 text-center">
-            <p className="text-3xl font-bold text-orange-700">{resultado.imagenes_subidas}</p>
-            <p className="text-sm text-orange-600 mt-1">Imágenes subidas</p>
-          </div>
-        </div>
+          {/* Tarjetas de resultado de la importación */}
+          {!undoResultado && (
+            <>
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
+                  <p className="text-3xl font-bold text-green-700">{resultado.productos_creados}</p>
+                  <p className="text-sm text-green-600 mt-1">Productos creados</p>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
+                  <p className="text-3xl font-bold text-blue-700">{resultado.productos_actualizados}</p>
+                  <p className="text-sm text-blue-600 mt-1">Productos actualizados</p>
+                </div>
+                <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 text-center">
+                  <p className="text-3xl font-bold text-purple-700">{resultado.ofertas_creadas}</p>
+                  <p className="text-sm text-purple-600 mt-1">Combos creados</p>
+                </div>
+                <div className="bg-orange-50 border border-orange-200 rounded-xl p-5 text-center">
+                  <p className="text-3xl font-bold text-orange-700">{resultado.imagenes_subidas}</p>
+                  <p className="text-sm text-orange-600 mt-1">Imágenes subidas</p>
+                </div>
+              </div>
 
-        {resultado.errores.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-            <p className="text-sm font-medium text-red-700 mb-2">
-              Errores ({resultado.errores.length}):
-            </p>
-            <ul className="space-y-1">
-              {resultado.errores.map((e, i) => (
-                <li key={i} className="text-xs text-red-600">
-                  • {e}
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+              {resultado.errores.length > 0 && (
+                <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                  <p className="text-sm font-medium text-red-700 mb-2">
+                    Errores ({resultado.errores.length}):
+                  </p>
+                  <ul className="space-y-1">
+                    {resultado.errores.map((e, i) => (
+                      <li key={i} className="text-xs text-red-600">• {e}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
+          )}
 
-        <div className="flex gap-3">
-          <Link
-            href="/dashboard/catalog"
-            className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg text-sm font-medium text-center"
-          >
-            Ver catálogo
-          </Link>
-          <button
-            onClick={() => {
-              setPaso(1);
-              setResultado(null);
-              setProductos([]);
-              setOfertas([]);
-            }}
-            className="flex-1 border border-gray-300 text-gray-600 px-4 py-3 rounded-lg text-sm"
-          >
-            Importar otro archivo
-          </button>
-        </div>
+          {/* Resumen del undo */}
+          {undoResultado && (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-5 mb-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-amber-700">{undoResultado.productos_eliminados}</p>
+                  <p className="text-sm text-amber-600 mt-1">Productos eliminados</p>
+                </div>
+                <div className="text-center">
+                  <p className="text-2xl font-bold text-amber-700">{undoResultado.ofertas_eliminadas}</p>
+                  <p className="text-sm text-amber-600 mt-1">Combos eliminados</p>
+                </div>
+              </div>
+              <p className="text-xs text-amber-600 text-center mt-3">
+                Solo se eliminaron los registros creados por esta importación. Los productos que ya existían y fueron actualizados no se tocaron.
+              </p>
+            </div>
+          )}
+
+          {/* Error del undo */}
+          {undoError && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+              <p className="text-sm text-red-700">Error al deshacer: {undoError}</p>
+            </div>
+          )}
+
+          {/* Confirmación inline de undo */}
+          {confirmarUndo && !undoResultado && (
+            <div className="bg-red-50 border border-red-200 rounded-xl p-4 mb-4">
+              <p className="text-sm font-medium text-red-800 mb-3">
+                ¿Confirmas que quieres eliminar los <strong>{resultado.productos_creados}</strong> productos
+                y <strong>{resultado.ofertas_creadas}</strong> combos creados en esta importación?
+              </p>
+              <p className="text-xs text-red-600 mb-4">
+                Los productos que ya existían (actualizados) no se tocarán. Esta acción no se puede revertir.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={deshacerImportacion}
+                  disabled={undoando}
+                  className="flex-1 bg-red-600 hover:bg-red-700 disabled:opacity-60 text-white px-4 py-2.5 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
+                >
+                  {undoando ? (
+                    <>
+                      <span className="inline-block w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Deshaciendo…
+                    </>
+                  ) : (
+                    'Sí, eliminar estos registros'
+                  )}
+                </button>
+                <button
+                  onClick={() => setConfirmarUndo(false)}
+                  disabled={undoando}
+                  className="border border-gray-300 text-gray-600 px-4 py-2.5 rounded-lg text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Botones de acción */}
+          <div className="flex gap-3">
+            <Link
+              href="/dashboard/catalog"
+              className="flex-1 bg-blue-600 text-white px-4 py-3 rounded-lg text-sm font-medium text-center"
+            >
+              Ver catálogo
+            </Link>
+            <button
+              onClick={() => {
+                setPaso(1);
+                setResultado(null);
+                setProductos([]);
+                setOfertas([]);
+                setUndoResultado(null);
+                setUndoError(null);
+                setConfirmarUndo(false);
+              }}
+              className="flex-1 border border-gray-300 text-gray-600 px-4 py-3 rounded-lg text-sm"
+            >
+              Importar otro archivo
+            </button>
+          </div>
+
+          {/* Botón deshacer — solo visible si no se ha deshecho ya */}
+          {!undoResultado && (
+            <button
+              onClick={() => setConfirmarUndo(true)}
+              disabled={confirmarUndo}
+              className="w-full mt-3 text-red-500 hover:text-red-700 text-xs underline disabled:no-underline disabled:text-gray-400"
+            >
+              Deshacer esta importación
+            </button>
+          )}
         </div>
       )}
 
