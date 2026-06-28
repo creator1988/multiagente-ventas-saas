@@ -37,7 +37,15 @@ export async function GET(): Promise<NextResponse> {
     `;
     info.columnas_productos = cols.map((c) => `${c.column_name} (${c.data_type})`);
 
-    // 4. Cantidad de productos por empresa_id
+    // 4. Empresas disponibles (para saber qué UUID usar en EMPRESA_ID_DEFAULT)
+    try {
+      const empresas = await sql`SELECT id, nombre FROM empresas LIMIT 10`;
+      info.empresas = empresas.map((e) => `${e.id} — ${e.nombre}`);
+    } catch {
+      info.empresas = 'tabla empresas no encontrada o sin columnas id/nombre';
+    }
+
+    // 5. Conteo de productos
     const empresa_id = process.env.EMPRESA_ID_DEFAULT ?? '';
     if (empresa_id) {
       const conteo = await sql`

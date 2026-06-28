@@ -11,8 +11,8 @@ export default function CatalogPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editando, setEditando] = useState<string | null>(null);
-  const [valores, setValores] = useState<{ precio_base: number; stock_disponible: number }>({
-    precio_base: 0,
+  const [valores, setValores] = useState<{ precio_lista: number; stock_disponible: number }>({
+    precio_lista: 0,
     stock_disponible: 0,
   });
 
@@ -112,9 +112,9 @@ export default function CatalogPage() {
             >
               <div className="flex items-center gap-4 min-w-0">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                {p.imagen_url && (
+                {p.url_imagen && (
                   <img
-                    src={p.imagen_url}
+                    src={p.url_imagen}
                     alt={p.nombre}
                     className="w-12 h-12 object-cover rounded-lg border border-gray-100 flex-shrink-0"
                   />
@@ -122,7 +122,7 @@ export default function CatalogPage() {
                 <div className="min-w-0">
                   <p className="font-medium text-gray-900 truncate">{p.nombre}</p>
                   <p className="text-sm text-gray-500">
-                    {p.categoria_nombre} · {p.unidad}
+                    {p.categoria_nombre} · {p.unidad_medida}
                   </p>
                 </div>
               </div>
@@ -134,9 +134,9 @@ export default function CatalogPage() {
                     <input
                       type="number"
                       className="block border border-gray-300 rounded px-2 py-1 w-28 text-sm"
-                      value={valores.precio_base}
+                      value={valores.precio_lista}
                       onChange={(e) =>
-                        setValores((v) => ({ ...v, precio_base: Number(e.target.value) }))
+                        setValores((v) => ({ ...v, precio_lista: Number(e.target.value) }))
                       }
                     />
                   </div>
@@ -168,7 +168,7 @@ export default function CatalogPage() {
                 <div className="flex items-center gap-6 flex-shrink-0 ml-4">
                   <div className="text-right">
                     <p className="font-semibold text-green-700">
-                      ${Number(p.precio_base).toLocaleString('es-CO')}
+                      ${Number(p.precio_lista).toLocaleString('es-CO')}
                     </p>
                     <p className="text-sm text-gray-500">Stock: {p.stock_disponible}</p>
                   </div>
@@ -176,7 +176,7 @@ export default function CatalogPage() {
                     onClick={() => {
                       setEditando(p.id);
                       setValores({
-                        precio_base: p.precio_base,
+                        precio_lista: p.precio_lista,
                         stock_disponible: p.stock_disponible,
                       });
                     }}

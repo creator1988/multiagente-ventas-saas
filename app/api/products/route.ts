@@ -66,7 +66,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   const body = (await request.json()) as {
     empresa_id?: string;
     nombre?: string;
-    precio_base?: number;
+    precio_lista?: number;
     stock_disponible?: number;
     activo?: boolean;
   };
@@ -75,9 +75,9 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
 
   try {
     // Solo actualizar campos enviados
-    if (body.precio_base !== undefined) {
+    if (body.precio_lista !== undefined) {
       await sql`
-        UPDATE productos SET precio_base = ${body.precio_base}
+        UPDATE productos SET precio_lista = ${body.precio_lista}
         WHERE id = ${producto_id} AND empresa_id = ${empresa_id}
       `;
     }

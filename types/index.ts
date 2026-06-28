@@ -39,10 +39,10 @@ export interface Producto {
   categoria_id: string;
   nombre: string;
   descripcion?: string;
-  precio_base: number;
-  unidad: string;
+  precio_lista: number;
+  unidad_medida: string;
   stock_disponible: number;
-  imagen_url?: string;
+  url_imagen?: string;
   activo: boolean;
 }
 

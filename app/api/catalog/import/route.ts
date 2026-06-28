@@ -85,10 +85,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             UPDATE productos SET
               nombre = ${prod.nombre},
               descripcion = ${prod.nombre_original},
-              precio_base = ${prod.precio},
+              precio_lista = ${prod.precio},
               stock_disponible = ${prod.stock},
               categoria_id = ${categoria_id},
-              imagen_url = COALESCE(${imagen_url}, imagen_url),
+              url_imagen = COALESCE(${imagen_url}, url_imagen),
               activo = true
             WHERE empresa_id = ${empresa_id} AND sku = ${prod.sku}
           `;
@@ -96,8 +96,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         } else {
           await sql`
             INSERT INTO productos
-              (empresa_id, categoria_id, sku, nombre, descripcion, precio_base,
-               stock_disponible, imagen_url, activo, unidad, importacion_id)
+              (empresa_id, categoria_id, sku, nombre, descripcion, precio_lista,
+               stock_disponible, url_imagen, activo, unidad_medida, importacion_id)
             VALUES
               (${empresa_id}, ${categoria_id}, ${prod.sku}, ${prod.nombre}, ${prod.nombre_original},
                ${prod.precio}, ${prod.stock}, ${imagen_url}, true, 'UND', ${importacion_id})
@@ -154,8 +154,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             const cat_id = catFallback.length > 0 ? (catFallback[0].id as string) : null;
             const nuevoRows = rows(await sql`
               INSERT INTO productos
-                (empresa_id, categoria_id, nombre, descripcion, precio_base,
-                 stock_disponible, activo, unidad, importacion_id)
+                (empresa_id, categoria_id, nombre, descripcion, precio_lista,
+                 stock_disponible, activo, unidad_medida, importacion_id)
               VALUES
                 (${empresa_id}, ${cat_id}, ${nombreBuscar}, ${nombreBuscar},
                  0, 0, true, 'UND', ${importacion_id})

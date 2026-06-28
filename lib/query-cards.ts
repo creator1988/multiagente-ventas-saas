@@ -113,7 +113,7 @@ export async function consultarStock(
 ): Promise<QueryCardResult<Producto[]>> {
   try {
     const rows = await sql`
-      SELECT id, nombre, stock_disponible, precio_base, unidad
+      SELECT id, nombre, stock_disponible, precio_lista, unidad_medida
       FROM productos
       WHERE empresa_id = ${empresa_id}
         AND activo = true
