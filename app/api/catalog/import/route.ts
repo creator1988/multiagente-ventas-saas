@@ -20,13 +20,19 @@ async function runMigrations(): Promise<void> {
 }
 
 async function getOrCreateCategoria(empresa_id: string, nombre: string): Promise<string> {
-  const result = rows(await sql`
+  const existing = rows(await sql`
+    SELECT id FROM categorias
+    WHERE empresa_id = ${empresa_id} AND nombre = ${nombre}
+    LIMIT 1
+  `);
+  if (existing.length > 0) return existing[0].id as string;
+
+  const created = rows(await sql`
     INSERT INTO categorias (empresa_id, nombre, activo)
     VALUES (${empresa_id}, ${nombre}, true)
-    ON CONFLICT (empresa_id, nombre) DO UPDATE SET nombre = EXCLUDED.nombre
     RETURNING id
   `);
-  return result[0].id as string;
+  return created[0].id as string;
 }
 
 async function uploadImagen(base64: string, tipo: string, slug: string): Promise<string> {
@@ -171,9 +177,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           await sql`
             INSERT INTO oferta_productos (oferta_id, producto_id, cantidad, precio_unitario_referencia)
             VALUES (${oferta_id}, ${producto_id}, ${frag.cantidad}, ${frag.precio_unitario_referencia})
-            ON CONFLICT (oferta_id, producto_id) DO UPDATE SET
-              cantidad = EXCLUDED.cantidad,
-              precio_unitario_referencia = EXCLUDED.precio_unitario_referencia
           `;
         }
 
