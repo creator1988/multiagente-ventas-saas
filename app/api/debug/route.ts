@@ -1,7 +1,15 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { getSql } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
+
+export async function DELETE(request: NextRequest): Promise<NextResponse> {
+  const sql = getSql();
+  const { ids } = (await request.json()) as { ids: string[] };
+  await sql`DELETE FROM oferta_productos WHERE oferta_id = ANY(${ids}::uuid[])`;
+  const eliminadas = await sql`DELETE FROM ofertas WHERE id = ANY(${ids}::uuid[]) RETURNING id`;
+  return NextResponse.json({ eliminadas: eliminadas.length });
+}
 
 export async function GET(): Promise<NextResponse> {
   const sql = getSql();
