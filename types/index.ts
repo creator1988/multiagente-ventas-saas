@@ -224,6 +224,29 @@ export interface KapsoReplyButtons {
 
 export type KapsoMessage = KapsoTextMessage | KapsoListMessage | KapsoReplyButtons;
 
+// Webhook estructurado tipo "kapso" con buffering activado
+export interface KapsoStructuredMessage {
+  event: 'whatsapp.message.received';
+  conversation_id: string;
+  from: string;
+  type: 'text' | 'audio' | 'image';
+  text?: string;
+  message?: {
+    id?: string;
+    text?: { body: string };
+    audio?: { id: string; mime_type: string };
+  };
+  message_id?: string;
+  whatsapp_config?: Record<string, unknown>;
+  timestamp?: number;
+}
+
+export interface KapsoBatchPayload {
+  batch: true;
+  data: KapsoStructuredMessage[];
+  batch_info: { count: number; window_ms: number };
+}
+
 // ============================================================
 // IMPORTACIÓN DE CATÁLOGO
 // ============================================================

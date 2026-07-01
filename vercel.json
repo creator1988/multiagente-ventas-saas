@@ -9,6 +9,9 @@
     "app/api/webhook/route.ts": {
       "maxDuration": 30
     },
+    "app/api/webhook/kapso/route.ts": {
+      "maxDuration": 30
+    },
     "app/api/agent/route.ts": {
       "maxDuration": 60
     },
