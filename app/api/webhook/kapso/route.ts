@@ -37,14 +37,8 @@ function verificarFirma(rawBody: string, signature: string): boolean {
     console.error('[kapso-webhook] KAPSO_WEBHOOK_SECRET no está definida en Vercel');
     return false;
   }
-  const hex = createHmac('sha256', secret).update(rawBody).digest('hex');
-  const conPrefijo = `sha256=${hex}`;
-  const coincide = conPrefijo === signature || hex === signature;
-  console.log('[kapso-webhook] DEBUG firma recibida:', signature);
-  console.log('[kapso-webhook] DEBUG firma esperada (con prefijo):', conPrefijo);
-  console.log('[kapso-webhook] DEBUG firma esperada (sin prefijo):', hex);
-  console.log('[kapso-webhook] DEBUG coincide:', coincide);
-  return coincide;
+  const esperada = createHmac('sha256', secret).update(rawBody).digest('hex');
+  return esperada === signature;
 }
 
 // Extrae texto de forma defensiva: primero message.text.body, luego text plano
@@ -62,11 +56,6 @@ function normalizarAMensajes(payload: unknown): KapsoStructuredMessage[] {
 
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const rawBody = await request.text();
-
-  // LOG TEMPORAL: ver todos los headers que envía Kapso
-  const headersDebug: Record<string, string> = {};
-  request.headers.forEach((v, k) => { headersDebug[k] = v; });
-  console.log('[kapso-webhook] DEBUG headers recibidos:', JSON.stringify(headersDebug));
 
   const signature = request.headers.get('x-webhook-signature') ?? '';
 
