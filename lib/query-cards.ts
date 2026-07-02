@@ -39,8 +39,8 @@ export async function crearClienteTemporal(
 ): Promise<QueryCardResult<Cliente>> {
   try {
     const rows = await sql`
-      INSERT INTO clientes (empresa_id, nombre_contacto, whatsapp, activo)
-      VALUES (${empresa_id}, 'Cliente nuevo', ${whatsapp}, true)
+      INSERT INTO clientes (empresa_id, nombre_negocio, nombre_contacto, whatsapp, activo)
+      VALUES (${empresa_id}, 'Cliente nuevo', 'Cliente nuevo', ${whatsapp}, true)
       RETURNING *
     `;
     return { data: rows[0] as Cliente, error: null, cached: false };
