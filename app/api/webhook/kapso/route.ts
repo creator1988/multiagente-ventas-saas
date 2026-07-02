@@ -128,18 +128,22 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // 1. Buscar tendero en clientes por número WhatsApp
         let { data: cliente } = await identificarCliente(empresa_id, whatsapp);
 
-        // 2. Si no existe, enviar bienvenida y crear cliente temporal
+        // 2. Si no existe, crear cliente temporal, enviar bienvenida y terminar
+        //    El SIGUIENTE mensaje será procesado por el agente con contexto completo
         if (!cliente) {
           console.log(`[kapso-webhook] Tendero nuevo: ${whatsapp} — creando cliente temporal`);
-          await sendMessage(whatsappRaw,
-            '¡Hola! Bienvenido a Distrisanty. Soy tu asistente de pedidos. ¿En qué te puedo ayudar?'
-          );
           const { data: nuevo } = await crearClienteTemporal(empresa_id, whatsapp);
           if (!nuevo) {
             console.error(`[kapso-webhook] No se pudo crear cliente temporal para ${whatsapp}`);
             return;
           }
-          cliente = nuevo;
+          const conv_id = await obtenerOCrearConversacion(empresa_id, nuevo.id);
+          const bienvenida = '¡Hola! Bienvenido a Distrisanty. Soy tu asistente de pedidos. ¿En qué te puedo ayudar?';
+          await guardarMensaje({ conversacion_id: conv_id, rol: 'cliente', contenido: textoUsuario });
+          await guardarMensaje({ conversacion_id: conv_id, rol: 'agente', contenido: bienvenida });
+          await sendMessage(whatsappRaw, bienvenida);
+          console.log(`[kapso-webhook] Bienvenida enviada a tendero nuevo: ${whatsapp}`);
+          return;
         }
 
         console.log(`[kapso-webhook] Tendero: ${cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp}`);
