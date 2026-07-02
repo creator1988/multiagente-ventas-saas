@@ -1,4 +1,4 @@
-import type { KapsoListMessage, KapsoReplyButtons } from '@/types';
+import type { KapsoListMessage } from '@/types';
 
 function getCredentials(): { apiKey: string; phoneNumberId: string } {
   const apiKey = process.env.KAPSO_API_KEY;
