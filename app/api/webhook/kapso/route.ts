@@ -127,7 +127,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         console.log(`[kapso-webhook] empresa_id="${empresa_id}" whatsapp="${whatsapp}" texto="${textoUsuario}"`);
 
         // 1. Buscar tendero en clientes por número WhatsApp
-        let { data: cliente } = await identificarCliente(empresa_id, whatsapp);
+        const { data: cliente } = await identificarCliente(empresa_id, whatsapp);
         console.log(`[kapso-webhook] Cliente encontrado: ${cliente ? cliente.id : 'NO'}`);
 
         // 2. Si no existe, crear cliente temporal, enviar bienvenida y terminar
