@@ -11,6 +11,7 @@ function getCredentials(): { apiKey: string; phoneNumberId: string } {
 async function kapsoRequest(body: unknown): Promise<unknown> {
   const { apiKey, phoneNumberId } = getCredentials();
   const url = `https://api.kapso.ai/meta/whatsapp/v24.0/${phoneNumberId}/messages`;
+  console.log('[kapso] Enviando a URL:', url);
 
   const response = await fetch(url, {
     method: 'POST',
