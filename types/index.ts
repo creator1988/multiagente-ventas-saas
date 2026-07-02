@@ -224,27 +224,26 @@ export interface KapsoReplyButtons {
 
 export type KapsoMessage = KapsoTextMessage | KapsoListMessage | KapsoReplyButtons;
 
-// Webhook estructurado tipo "kapso" con buffering activado
-export interface KapsoStructuredMessage {
-  event: 'whatsapp.message.received';
-  conversation_id: string;
-  from: string;
-  type: 'text' | 'audio' | 'image';
-  text?: string;
-  message?: {
-    id?: string;
+// Webhook Kapso payload v2 (estructura real confirmada)
+export interface KapsoV2Item {
+  message: {
+    from: string;
+    id: string;
     text?: { body: string };
-    audio?: { id: string; mime_type: string };
+    type: 'text' | 'audio' | 'image' | 'interactive';
   };
-  message_id?: string;
-  whatsapp_config?: Record<string, unknown>;
-  timestamp?: number;
+  conversation: {
+    id: string;
+    phone_number: string;
+    phone_number_id: string;
+  };
+  phone_number_id: string;
 }
 
-export interface KapsoBatchPayload {
-  batch: true;
-  data: KapsoStructuredMessage[];
-  batch_info: { count: number; window_ms: number };
+export interface KapsoV2Payload {
+  type: string;
+  batch: boolean;
+  data: KapsoV2Item[];
 }
 
 // ============================================================
