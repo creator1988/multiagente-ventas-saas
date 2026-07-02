@@ -53,8 +53,15 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
   let contextoSQL = '';
 
   if (intencion === 'catalogo') {
-    const { data } = await catalogoPorCategoria(empresa_id);
-    contextoSQL = data ? JSON.stringify(data, null, 2) : 'No hay productos disponibles.';
+    const { data, error: errCatalogo } = await catalogoPorCategoria(empresa_id);
+    console.log(`[agent-core] catalogo empresa_id="${empresa_id}" resultados=${data?.length ?? 0} error=${errCatalogo}`);
+    if (!data || data.length === 0) {
+      const msg = 'En este momento no tenemos el catálogo disponible en el sistema. Un asesor te contactará pronto con la lista de productos. 🙏';
+      await enviarTexto(whatsapp, msg);
+      await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+      return;
+    }
+    contextoSQL = JSON.stringify(data, null, 2);
   }
 
   if (intencion === 'historial' && cliente) {
