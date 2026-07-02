@@ -34,6 +34,25 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     historial,
   } = params;
 
+  console.log('[agent-core] empresa_id:', empresa_id, 'cliente whatsapp:', whatsapp);
+
+  // Saludo: respuesta directa con reply_buttons, sin pasar por Claude
+  if (intencion === 'saludo') {
+    const nombre = cliente?.nombre_negocio ?? cliente?.nombre_contacto;
+    const tieneHistorial = !!cliente?.fecha_ultimo_pedido;
+    const cuerpo = tieneHistorial && nombre
+      ? `¡Hola ${nombre}! ¿Qué necesitas hoy?`
+      : '¡Hola! Bienvenido a Distrisanty. ¿En qué te puedo ayudar?';
+
+    await enviarReplyButtons(whatsapp, cuerpo, [
+      { id: 'btn_catalogo',        title: 'Ver catálogo' },
+      { id: 'btn_repetir_pedido',  title: 'Repetir pedido' },
+      { id: 'btn_ofertas',         title: 'Ver ofertas' },
+    ]);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: cuerpo });
+    return;
+  }
+
   // Verificar cache L1+L2 para intenciones cacheables
   const cacheableIntenciones: Intencion[] = ['catalogo', 'consulta_stock'];
   if (cacheableIntenciones.includes(intencion)) {
