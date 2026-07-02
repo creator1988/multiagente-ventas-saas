@@ -57,6 +57,8 @@ function normalizarAMensajes(payload: unknown): KapsoStructuredMessage[] {
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const rawBody = await request.text();
 
+  console.log('[kapso-webhook] Body completo:', rawBody);
+
   const signature = request.headers.get('x-webhook-signature') ?? '';
 
   if (!verificarFirma(rawBody, signature)) {
