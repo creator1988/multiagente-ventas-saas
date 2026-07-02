@@ -1,6 +1,6 @@
 import type { KapsoListMessage, KapsoReplyButtons } from '@/types';
 
-const KAPSO_BASE_URL = 'https://api.kapso.io/v1';
+const KAPSO_BASE_URL = 'https://api.kapso.ai/v1';
 
 async function kapsoRequest(endpoint: string, body: unknown): Promise<unknown> {
   if (!process.env.KAPSO_API_KEY) {
