@@ -107,11 +107,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       grupos.get(convId)!.items.push(item);
     }
 
-    await Promise.allSettled(
+    const resultados = await Promise.allSettled(
       Array.from(grupos.entries()).map(async ([kapsoConvId, grupo]) => {
         const whatsapp = grupo.whatsapp;
 
-        // Mensajes del mismo tendero en la ventana → un único turno para el agente
         const textoUsuario = grupo.items
           .map(extraerTexto)
           .filter(Boolean)
@@ -120,14 +119,14 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (!textoUsuario.trim()) return;
 
         const empresa_id = EMPRESA_ID;
+        console.log(`[kapso-webhook] [1/6] Texto: "${textoUsuario}" | Empresa: "${empresa_id}" | Whatsapp: ${whatsapp}`);
 
-        // 1. Identificar tendero por número de WhatsApp en tabla clientes de Neon
         const { data: cliente } = await identificarCliente(empresa_id, whatsapp);
+        console.log(`[kapso-webhook] [2/6] Cliente: ${cliente ? cliente.nombre : 'no registrado'}`);
 
-        // 2. Obtener o crear conversación en Neon
         const conversacion_id = await obtenerOCrearConversacion(empresa_id, whatsapp, cliente?.id);
+        console.log(`[kapso-webhook] [3/6] Conversacion ID: ${conversacion_id}`);
 
-        // 3. Guardar cada mensaje individual en tabla mensajes
         for (const item of grupo.items) {
           const texto = extraerTexto(item);
           if (!texto) continue;
@@ -140,14 +139,12 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             kapso_message_id: item.message?.id,
           });
         }
+        console.log(`[kapso-webhook] [4/6] Mensajes guardados en Neon`);
 
-        // 4. Obtener historial y clasificar intención
         const historial = await obtenerHistorialMensajes(conversacion_id, 10);
         const intencion = clasificarIntencion(textoUsuario);
+        console.log(`[kapso-webhook] [5/6] Intención: ${intencion} | Historial: ${historial.length} mensajes`);
 
-        console.log(`[kapso-webhook] Tendero: ${whatsapp} | Intención: ${intencion} | Texto: "${textoUsuario}"`);
-
-        // 5. Procesar con Claude (Query Card según intención → respuesta)
         try {
           await procesarConClaude({
             empresa_id,
@@ -158,11 +155,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             intencion,
             historial,
           });
-          console.log(`[kapso-webhook] Conversación procesada: ${kapsoConvId}`);
+          console.log(`[kapso-webhook] [6/6] Claude respondió OK: ${kapsoConvId}`);
         } catch (claudeError) {
-          console.error(`[kapso-webhook] Error Claude para ${kapsoConvId}, Groq fallback:`, claudeError);
-
-          // 6. Fallback Groq → respuesta de emergencia por WhatsApp
+          console.error(`[kapso-webhook] [6/6] Error Claude, Groq fallback:`, claudeError);
           const respuesta = await fallbackGroq(historial, textoUsuario);
           await sendMessage(whatsapp, respuesta);
           await guardarMensaje({
@@ -171,7 +166,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             rol: 'assistant',
             contenido: respuesta,
           });
-
           if (cliente && process.env.ASESOR_EMAIL) {
             await notificarEscalado({
               asesor_email: process.env.ASESOR_EMAIL,
@@ -184,6 +178,13 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         }
       })
     );
+
+    // Loguear cualquier promesa rechazada que allSettled haya absorbido
+    resultados.forEach((r, i) => {
+      if (r.status === 'rejected') {
+        console.error(`[kapso-webhook] Error en conversación ${i}:`, r.reason);
+      }
+    });
 
     console.log(`[kapso-webhook] Procesado: ${grupos.size} conversaciones`);
     return NextResponse.json({ ok: true, processed: grupos.size });
