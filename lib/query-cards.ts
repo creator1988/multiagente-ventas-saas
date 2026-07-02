@@ -17,14 +17,33 @@ export async function identificarCliente(
   whatsapp: string
 ): Promise<QueryCardResult<Cliente>> {
   try {
+    // Maneja ambos formatos: "573043783705" y "+573043783705"
+    const sinPlus = whatsapp.replace(/^\+/, '');
+    const conPlus = `+${sinPlus}`;
     const rows = await sql`
       SELECT * FROM clientes
       WHERE empresa_id = ${empresa_id}
-        AND whatsapp = ${whatsapp}
+        AND (whatsapp = ${sinPlus} OR whatsapp = ${conPlus})
         AND activo = true
       LIMIT 1
     `;
     return { data: (rows[0] as Cliente) ?? null, error: null, cached: false };
+  } catch (e) {
+    return { data: null, error: String(e), cached: false };
+  }
+}
+
+export async function crearClienteTemporal(
+  empresa_id: string,
+  whatsapp: string
+): Promise<QueryCardResult<Cliente>> {
+  try {
+    const rows = await sql`
+      INSERT INTO clientes (empresa_id, nombre_contacto, whatsapp, activo)
+      VALUES (${empresa_id}, 'Cliente nuevo', ${whatsapp}, true)
+      RETURNING *
+    `;
+    return { data: rows[0] as Cliente, error: null, cached: false };
   } catch (e) {
     return { data: null, error: String(e), cached: false };
   }
@@ -224,21 +243,17 @@ export async function registrarPedido(
 // ============================================================
 export async function guardarMensaje(params: {
   conversacion_id: string;
-  empresa_id: string;
-  rol: 'user' | 'assistant';
+  rol: 'cliente' | 'agente';
   contenido: string;
   tipo?: string;
-  kapso_message_id?: string;
 }): Promise<void> {
   await sql`
-    INSERT INTO mensajes (conversacion_id, empresa_id, rol, contenido, tipo, kapso_message_id)
+    INSERT INTO mensajes (conversacion_id, rol, contenido, tipo)
     VALUES (
       ${params.conversacion_id},
-      ${params.empresa_id},
       ${params.rol},
       ${params.contenido},
-      ${params.tipo ?? 'text'},
-      ${params.kapso_message_id ?? null}
+      ${params.tipo ?? 'texto'}
     )
   `;
 }
@@ -248,23 +263,22 @@ export async function guardarMensaje(params: {
 // ============================================================
 export async function obtenerOCrearConversacion(
   empresa_id: string,
-  whatsapp: string,
-  cliente_id?: string
+  cliente_id: string
 ): Promise<string> {
   const activa = await sql`
     SELECT id FROM conversaciones
     WHERE empresa_id = ${empresa_id}
-      AND whatsapp_numero = ${whatsapp}
+      AND cliente_id = ${cliente_id}
       AND estado = 'activa'
-    ORDER BY iniciada_at DESC
+    ORDER BY inicio DESC
     LIMIT 1
   `;
 
   if (activa.length) return activa[0].id as string;
 
   const nueva = await sql`
-    INSERT INTO conversaciones (empresa_id, cliente_id, whatsapp_numero, estado)
-    VALUES (${empresa_id}, ${cliente_id ?? null}, ${whatsapp}, 'activa')
+    INSERT INTO conversaciones (empresa_id, cliente_id, canal, estado)
+    VALUES (${empresa_id}, ${cliente_id}, 'whatsapp', 'activa')
     RETURNING id
   `;
 
@@ -281,10 +295,15 @@ export async function obtenerHistorialMensajes(
   const rows = await sql`
     SELECT rol, contenido FROM mensajes
     WHERE conversacion_id = ${conversacion_id}
-      AND rol IN ('user', 'assistant')
-    ORDER BY created_at DESC
+      AND rol IN ('cliente', 'agente')
+    ORDER BY timestamp DESC
     LIMIT ${limite}
   `;
 
-  return (rows as Array<{ rol: 'user' | 'assistant'; contenido: string }>).reverse();
+  return (rows as Array<{ rol: string; contenido: string }>)
+    .reverse()
+    .map(m => ({
+      rol: (m.rol === 'cliente' ? 'user' : 'assistant') as 'user' | 'assistant',
+      contenido: m.contenido,
+    }));
 }

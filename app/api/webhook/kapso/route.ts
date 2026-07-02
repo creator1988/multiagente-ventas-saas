@@ -3,6 +3,7 @@ import { createHmac } from 'crypto';
 import type { KapsoV2Payload, KapsoV2Item } from '@/types';
 import {
   identificarCliente,
+  crearClienteTemporal,
   obtenerOCrearConversacion,
   obtenerHistorialMensajes,
   guardarMensaje,
@@ -40,6 +41,11 @@ function verificarFirma(rawBody: string, signature: string): boolean {
   return esperada === signature;
 }
 
+function normalizarWhatsapp(numero: string): string {
+  // Kapso envía sin +, la BD puede tener con o sin — normalizamos a sin +
+  return numero.replace(/^\+/, '');
+}
+
 function extraerTexto(item: KapsoV2Item): string {
   return item.message?.text?.body ?? '';
 }
@@ -57,11 +63,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     payload = JSON.parse(rawBody) as KapsoV2Payload;
   } catch {
-    console.error('[kapso-webhook] JSON inválido');
     return NextResponse.json({ error: 'JSON inválido' }, { status: 400 });
   }
 
-  // Solo procesar mensajes entrantes de WhatsApp
   if (payload.type !== 'whatsapp.message.received') {
     return NextResponse.json({ ok: true });
   }
@@ -95,7 +99,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     console.log(`[kapso-webhook] Mensajes recibidos: ${items.length}`);
 
-    // Agrupar por conversation.id — junta mensajes del mismo tendero en la ventana de buffering
+    // Agrupar por conversation.id para unir mensajes del mismo tendero en la ventana de buffering
     const grupos = new Map<string, { items: KapsoV2Item[]; whatsapp: string }>();
     for (const item of items) {
       const convId = item.conversation?.id ?? item.message?.from;
@@ -109,7 +113,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     const resultados = await Promise.allSettled(
       Array.from(grupos.entries()).map(async ([kapsoConvId, grupo]) => {
-        const whatsapp = grupo.whatsapp;
+        const whatsappRaw = grupo.whatsapp;
+        const whatsapp = normalizarWhatsapp(whatsappRaw);
 
         const textoUsuario = grupo.items
           .map(extraerTexto)
@@ -119,58 +124,72 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         if (!textoUsuario.trim()) return;
 
         const empresa_id = EMPRESA_ID;
-        console.log(`[kapso-webhook] [1/6] Texto: "${textoUsuario}" | Empresa: "${empresa_id}" | Whatsapp: ${whatsapp}`);
 
-        const { data: cliente } = await identificarCliente(empresa_id, whatsapp);
-        console.log(`[kapso-webhook] [2/6] Cliente: ${cliente ? cliente.nombre : 'no registrado'}`);
+        // 1. Buscar tendero en clientes por número WhatsApp
+        let { data: cliente } = await identificarCliente(empresa_id, whatsapp);
 
-        const conversacion_id = await obtenerOCrearConversacion(empresa_id, whatsapp, cliente?.id);
-        console.log(`[kapso-webhook] [3/6] Conversacion ID: ${conversacion_id}`);
+        // 2. Si no existe, enviar bienvenida y crear cliente temporal
+        if (!cliente) {
+          console.log(`[kapso-webhook] Tendero nuevo: ${whatsapp} — creando cliente temporal`);
+          await sendMessage(whatsappRaw,
+            '¡Hola! Bienvenido a Distrisanty. Soy tu asistente de pedidos. ¿En qué te puedo ayudar?'
+          );
+          const { data: nuevo } = await crearClienteTemporal(empresa_id, whatsapp);
+          if (!nuevo) {
+            console.error(`[kapso-webhook] No se pudo crear cliente temporal para ${whatsapp}`);
+            return;
+          }
+          cliente = nuevo;
+        }
 
+        console.log(`[kapso-webhook] Tendero: ${cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp}`);
+
+        // 3. Obtener o crear conversación activa
+        const conversacion_id = await obtenerOCrearConversacion(empresa_id, cliente.id);
+        console.log(`[kapso-webhook] Conversación: ${conversacion_id}`);
+
+        // 4. Guardar mensajes entrantes en tabla mensajes
         for (const item of grupo.items) {
           const texto = extraerTexto(item);
           if (!texto) continue;
           await guardarMensaje({
             conversacion_id,
-            empresa_id,
-            rol: 'user',
+            rol: 'cliente',
             contenido: texto,
-            tipo: item.message?.type ?? 'text',
-            kapso_message_id: item.message?.id,
+            tipo: item.message?.type ?? 'texto',
           });
         }
-        console.log(`[kapso-webhook] [4/6] Mensajes guardados en Neon`);
 
+        // 5. Historial + intención
         const historial = await obtenerHistorialMensajes(conversacion_id, 10);
         const intencion = clasificarIntencion(textoUsuario);
-        console.log(`[kapso-webhook] [5/6] Intención: ${intencion} | Historial: ${historial.length} mensajes`);
+        console.log(`[kapso-webhook] Intención: ${intencion} | Texto: "${textoUsuario}"`);
 
+        // 6. Procesar con Claude → Query Card según intención → respuesta
         try {
           await procesarConClaude({
             empresa_id,
-            whatsapp,
+            whatsapp: whatsappRaw,
             cliente,
             conversacion_id,
             textoUsuario,
             intencion,
             historial,
           });
-          console.log(`[kapso-webhook] [6/6] Claude respondió OK: ${kapsoConvId}`);
+          console.log(`[kapso-webhook] Conversación respondida: ${kapsoConvId}`);
         } catch (claudeError) {
-          console.error(`[kapso-webhook] [6/6] Error Claude, Groq fallback:`, claudeError);
+          console.error(`[kapso-webhook] Error Claude, Groq fallback:`, claudeError);
+
+          // Fallback Groq + guardar respuesta de emergencia
           const respuesta = await fallbackGroq(historial, textoUsuario);
-          await sendMessage(whatsapp, respuesta);
-          await guardarMensaje({
-            conversacion_id,
-            empresa_id,
-            rol: 'assistant',
-            contenido: respuesta,
-          });
-          if (cliente && process.env.ASESOR_EMAIL) {
+          await sendMessage(whatsappRaw, respuesta);
+          await guardarMensaje({ conversacion_id, rol: 'agente', contenido: respuesta });
+
+          if (process.env.ASESOR_EMAIL) {
             await notificarEscalado({
               asesor_email: process.env.ASESOR_EMAIL,
-              cliente_nombre: cliente.nombre,
-              whatsapp,
+              cliente_nombre: cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp,
+              whatsapp: whatsappRaw,
               motivo: 'Error en el agente IA — requiere atención manual',
               conversacion_id,
             });
@@ -179,10 +198,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       })
     );
 
-    // Loguear cualquier promesa rechazada que allSettled haya absorbido
     resultados.forEach((r, i) => {
       if (r.status === 'rejected') {
-        console.error(`[kapso-webhook] Error en conversación ${i}:`, r.reason);
+        console.error(`[kapso-webhook] Error en grupo ${i}:`, r.reason);
       }
     });
 

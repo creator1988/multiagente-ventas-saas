@@ -42,8 +42,7 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
       await enviarTexto(whatsapp, cached);
       await guardarMensaje({
         conversacion_id,
-        empresa_id,
-        rol: 'assistant',
+        rol: 'agente',
         contenido: cached,
       });
       return;
@@ -98,7 +97,7 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
 
   const systemPrompt = buildSystemPrompt({
     empresa_nombre,
-    cliente_nombre: cliente?.nombre,
+    cliente_nombre: cliente?.nombre_negocio ?? cliente?.nombre_contacto,
     fecha_hoy: new Date().toLocaleDateString('es-CO', {
       weekday: 'long',
       year: 'numeric',
@@ -148,8 +147,7 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
   // Guardar respuesta del asistente
   await guardarMensaje({
     conversacion_id,
-    empresa_id,
-    rol: 'assistant',
+    rol: 'agente',
     contenido: respuestaFinal,
   });
 

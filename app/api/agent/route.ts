@@ -28,7 +28,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const systemPrompt = buildSystemPrompt({
     empresa_nombre: 'Distrisanty',
-    cliente_nombre: cliente?.nombre,
+    cliente_nombre: cliente?.nombre_negocio ?? cliente?.nombre_contacto,
     fecha_hoy: new Date().toLocaleDateString('es-CO'),
   });
 

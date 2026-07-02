@@ -55,11 +55,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     const { data: cliente } = await identificarCliente(empresa_id, whatsapp);
 
     // 2. Obtener o crear conversación
-    const conversacion_id = await obtenerOCrearConversacion(
-      empresa_id,
-      whatsapp,
-      cliente?.id
-    );
+    const conversacion_id = cliente?.id
+      ? await obtenerOCrearConversacion(empresa_id, cliente.id)
+      : '';
 
     // 3. Extraer texto del mensaje (manejar audio)
     let textoUsuario = '';
@@ -96,11 +94,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     // 4. Guardar mensaje del usuario
     await guardarMensaje({
       conversacion_id,
-      empresa_id,
-      rol: 'user',
+      rol: 'cliente',
       contenido: textoUsuario,
       tipo: tipoMensaje,
-      kapso_message_id: msg.id,
     });
 
     // 5. Clasificar intención
@@ -122,8 +118,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       await enviarTexto(whatsapp, respuesta);
       await guardarMensaje({
         conversacion_id,
-        empresa_id,
-        rol: 'assistant',
+        rol: 'agente',
         contenido: respuesta,
       });
       return NextResponse.json({ ok: true });
@@ -152,8 +147,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       await enviarTexto(whatsapp, respuesta);
       await guardarMensaje({
         conversacion_id,
-        empresa_id,
-        rol: 'assistant',
+        rol: 'agente',
         contenido: respuesta,
       });
 
@@ -161,7 +155,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (cliente && process.env.ASESOR_EMAIL) {
         await notificarEscalado({
           asesor_email: process.env.ASESOR_EMAIL,
-          cliente_nombre: cliente.nombre,
+          cliente_nombre: cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp,
           whatsapp,
           motivo: 'Error en el agente IA — requiere atención manual',
           conversacion_id,

@@ -15,13 +15,19 @@ export interface Empresa {
 export interface Cliente {
   id: string;
   empresa_id: string;
-  nombre: string;
-  whatsapp: string;
-  email?: string;
   ruta_id?: string;
-  credito_disponible: number;
+  codigo_cliente?: string;
+  nombre_negocio?: string;
+  tipo_negocio?: string;
+  nombre_contacto?: string;
+  telefono?: string;
+  whatsapp: string;
+  direccion?: string;
+  barrio?: string;
+  ciudad?: string;
+  fecha_ultimo_pedido?: Date;
   activo: boolean;
-  created_at: Date;
+  creado_at: Date;
 }
 
 export interface Categoria {
@@ -85,22 +91,24 @@ export interface Conversacion {
   id: string;
   empresa_id: string;
   cliente_id?: string;
-  whatsapp_numero: string;
+  pedido_id?: string;
+  canal?: string;
+  inicio: Date;
+  ultimo_mensaje?: Date;
   estado: 'activa' | 'completada' | 'escalada';
   isa_score?: number;
-  iniciada_at: Date;
-  finalizada_at?: Date;
+  resumen?: string;
+  escalada_a?: string;
+  creado_at: Date;
 }
 
 export interface Mensaje {
   id: string;
   conversacion_id: string;
-  empresa_id: string;
-  rol: 'user' | 'assistant' | 'system';
+  rol: 'cliente' | 'agente';
   contenido: string;
-  tipo: 'text' | 'audio' | 'image' | 'list' | 'buttons' | 'product';
-  kapso_message_id?: string;
-  created_at: Date;
+  tipo: string;
+  timestamp: Date;
 }
 
 export interface CacheRespuesta {
