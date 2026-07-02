@@ -1,17 +1,22 @@
 import type { KapsoListMessage, KapsoReplyButtons } from '@/types';
 
-const KAPSO_BASE_URL = 'https://api.kapso.ai/v1';
+function getCredentials(): { apiKey: string; phoneNumberId: string } {
+  const apiKey = process.env.KAPSO_API_KEY;
+  const phoneNumberId = process.env.KAPSO_PHONE_NUMBER_ID;
+  if (!apiKey) throw new Error('KAPSO_API_KEY no está definida');
+  if (!phoneNumberId) throw new Error('KAPSO_PHONE_NUMBER_ID no está definida');
+  return { apiKey, phoneNumberId };
+}
 
-async function kapsoRequest(endpoint: string, body: unknown): Promise<unknown> {
-  if (!process.env.KAPSO_API_KEY) {
-    throw new Error('KAPSO_API_KEY no está definida');
-  }
+async function kapsoRequest(body: unknown): Promise<unknown> {
+  const { apiKey, phoneNumberId } = getCredentials();
+  const url = `https://api.kapso.ai/meta/whatsapp/v24.0/${phoneNumberId}/messages`;
 
-  const response = await fetch(`${KAPSO_BASE_URL}${endpoint}`, {
+  const response = await fetch(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${process.env.KAPSO_API_KEY}`,
+      'X-API-Key': apiKey,
     },
     body: JSON.stringify(body),
   });
@@ -25,9 +30,11 @@ async function kapsoRequest(endpoint: string, body: unknown): Promise<unknown> {
 }
 
 export async function enviarTexto(to: string, texto: string): Promise<void> {
-  await kapsoRequest('/messages', {
-    type: 'text',
+  await kapsoRequest({
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
+    type: 'text',
     text: { body: texto },
   });
 }
@@ -40,9 +47,11 @@ export async function enviarListMessage(
   header?: string,
   footer?: string
 ): Promise<void> {
-  const payload: KapsoListMessage = {
-    type: 'interactive',
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
+    type: 'interactive',
     interactive: {
       type: 'list',
       body: { text: body },
@@ -51,7 +60,7 @@ export async function enviarListMessage(
       ...(footer && { footer: { text: footer } }),
     },
   };
-  await kapsoRequest('/messages', payload);
+  await kapsoRequest(payload);
 }
 
 export async function enviarReplyButtons(
@@ -59,9 +68,11 @@ export async function enviarReplyButtons(
   body: string,
   botones: Array<{ id: string; title: string }>
 ): Promise<void> {
-  const payload: KapsoReplyButtons = {
-    type: 'interactive',
+  const payload = {
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
     to,
+    type: 'interactive',
     interactive: {
       type: 'button',
       body: { text: body },
@@ -73,28 +84,24 @@ export async function enviarReplyButtons(
       },
     },
   };
-  await kapsoRequest('/messages', payload);
+  await kapsoRequest(payload);
 }
 
 export async function descargarMedia(mediaId: string): Promise<Buffer> {
-  if (!process.env.KAPSO_API_KEY) {
-    throw new Error('KAPSO_API_KEY no está definida');
-  }
+  const { apiKey, phoneNumberId } = getCredentials();
 
-  const urlResp = await fetch(`${KAPSO_BASE_URL}/media/${mediaId}`, {
-    headers: { Authorization: `Bearer ${process.env.KAPSO_API_KEY}` },
-  });
+  const urlResp = await fetch(
+    `https://api.kapso.ai/meta/whatsapp/v24.0/${phoneNumberId}/media/${mediaId}`,
+    { headers: { 'X-API-Key': apiKey } }
+  );
 
   if (!urlResp.ok) throw new Error(`No se pudo obtener URL del media: ${mediaId}`);
 
   const { url } = (await urlResp.json()) as { url: string };
 
-  const mediaResp = await fetch(url, {
-    headers: { Authorization: `Bearer ${process.env.KAPSO_API_KEY}` },
-  });
+  const mediaResp = await fetch(url, { headers: { 'X-API-Key': apiKey } });
 
   if (!mediaResp.ok) throw new Error(`No se pudo descargar el media: ${mediaId}`);
 
-  const arrayBuffer = await mediaResp.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  return Buffer.from(await mediaResp.arrayBuffer());
 }
