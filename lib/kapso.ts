@@ -123,7 +123,7 @@ export async function enviarProductoConBoton(
 
 export async function descargarAudio(url: string): Promise<Buffer> {
   const { apiKey } = getCredentials();
-  const resp = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+  const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
   if (!resp.ok) throw new Error(`No se pudo descargar audio: ${resp.status}`);
   return Buffer.from(await resp.arrayBuffer());
 }

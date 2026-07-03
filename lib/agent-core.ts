@@ -64,14 +64,17 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     return;
   }
 
-  // PRIORIDAD 3: estado "esperando_cantidad" — captura texto numérico
+  // PRIORIDAD 3: estado "esperando_cantidad" — botones rápidos (qty_N) o texto numérico
   if (estado.etapa === 'esperando_cantidad') {
-    const num = parseInt(textoUsuario.trim(), 10);
+    const qtyMatch = textoUsuario.match(/^qty_(\d+)$/);
+    const num = qtyMatch
+      ? parseInt(qtyMatch[1], 10)
+      : parseInt(textoUsuario.trim(), 10);
     if (!isNaN(num) && num > 0) {
       await manejarCantidad(params, estado, num);
       return;
     }
-    const msg = `Por favor escribe solo el número de unidades de *${estado.producto_contexto?.nombre ?? 'ese producto'}* que deseas.`;
+    const msg = `Por favor escribe el número de unidades de *${estado.producto_contexto?.nombre ?? 'ese producto'}* que deseas.`;
     await enviarTexto(whatsapp, msg);
     await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
     return;
@@ -312,9 +315,14 @@ async function iniciarAgregarAlPedido(
     return;
   }
 
-  const msg = `¿Cuántas unidades de *${p.nombre}* ($${p.precio_lista.toLocaleString('es-CO')} c/u) deseas?`;
-  await enviarTexto(whatsapp, msg);
-  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+  const precioStr = p.precio_lista.toLocaleString('es-CO');
+  const msgCant = `¿Cuántas unidades de *${p.nombre}*?\n💰 $${precioStr} c/u`;
+  await enviarReplyButtons(whatsapp, msgCant, [
+    { id: 'qty_1', title: '1 unidad' },
+    { id: 'qty_2', title: '2 unidades' },
+    { id: 'qty_3', title: '3 unidades' },
+  ]);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msgCant });
 
   await setEstadoFlujo(empresa_id, conversacion_id, {
     ...estado,
@@ -364,8 +372,13 @@ async function seleccionarProducto(
     return;
   }
 
-  const msg = `¿Cuántas unidades de *${p.nombre}* ($${p.precio_lista.toLocaleString('es-CO')} c/u) deseas?`;
-  await enviarTexto(whatsapp, msg);
+  const precio = p.precio_lista.toLocaleString('es-CO');
+  const msg = `¿Cuántas unidades de *${p.nombre}*?\n💰 $${precio} c/u`;
+  await enviarReplyButtons(whatsapp, msg, [
+    { id: 'qty_1', title: '1 unidad' },
+    { id: 'qty_2', title: '2 unidades' },
+    { id: 'qty_3', title: '3 unidades' },
+  ]);
   await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
 
   await setEstadoFlujo(empresa_id, conversacion_id, {
