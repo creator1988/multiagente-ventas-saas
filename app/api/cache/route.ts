@@ -10,12 +10,12 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const rows = await sql`
-      SELECT cache_key, ttl_seconds, created_at, expires_at,
+      SELECT clave, hits, creado_at, expira_at,
              LENGTH(respuesta) AS respuesta_bytes
       FROM cache_respuestas
       WHERE empresa_id = ${empresa_id}
-        AND expires_at > NOW()
-      ORDER BY created_at DESC
+        AND expira_at > NOW()
+      ORDER BY creado_at DESC
       LIMIT 100
     `;
     return NextResponse.json({ data: rows });

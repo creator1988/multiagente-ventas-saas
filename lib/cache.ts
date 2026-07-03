@@ -5,9 +5,6 @@ const cacheL1 = new Map<string, { valor: string; expira: number }>();
 
 const TTL_DEFAULT = 300; // 5 minutos en segundos
 
-// Se activa al primer error L2 para no spam de logs
-let l2ErrorLogado = false;
-
 function buildKey(empresa_id: string, intencion: string, parametros: string): string {
   return `${empresa_id}:${intencion}:${parametros}`;
 }
@@ -26,13 +23,13 @@ export async function getCached(
   }
   cacheL1.delete(key);
 
-  // L2: Neon DB (non-blocking — degrada a L1 si hay error de schema)
+  // L2: Neon DB
   try {
     const rows = await sql`
       SELECT respuesta FROM cache_respuestas
       WHERE empresa_id = ${empresa_id}
-        AND cache_key = ${key}
-        AND expires_at > NOW()
+        AND clave = ${key}
+        AND expira_at > NOW()
       LIMIT 1
     `;
 
@@ -42,10 +39,7 @@ export async function getCached(
       return valor;
     }
   } catch (e) {
-    if (!l2ErrorLogado) {
-      console.error('[cache] L2 no disponible (¿columnas incorrectas?). Usando solo L1.', e);
-      l2ErrorLogado = true;
-    }
+    console.error('[cache] L2 getCached error:', e);
   }
 
   return null;
@@ -63,28 +57,22 @@ export async function setCached(
   // Guardar en L1 siempre
   cacheL1.set(key, { valor: respuesta, expira: Date.now() + ttlSeconds * 1000 });
 
-  // L2: fire-and-forget — si falla (schema incorrecto) no bloquea la respuesta
+  // L2: fire-and-forget — no bloquea la respuesta al usuario
   sql`
-    INSERT INTO cache_respuestas (empresa_id, cache_key, respuesta, ttl_seconds, expires_at)
+    INSERT INTO cache_respuestas (empresa_id, clave, respuesta, expira_at)
     VALUES (
       ${empresa_id},
       ${key},
       ${respuesta},
-      ${ttlSeconds},
       NOW() + (${ttlSeconds} * INTERVAL '1 second')
     )
-    ON CONFLICT (empresa_id, cache_key)
+    ON CONFLICT (empresa_id, clave)
     DO UPDATE SET
       respuesta = EXCLUDED.respuesta,
-      ttl_seconds = EXCLUDED.ttl_seconds,
-      expires_at = EXCLUDED.expires_at,
-      created_at = NOW()
-  `.catch(e => {
-    if (!l2ErrorLogado) {
-      console.error('[cache] L2 write error (¿columnas incorrectas?):', e);
-      l2ErrorLogado = true;
-    }
-  });
+      expira_at = EXCLUDED.expira_at,
+      hits      = cache_respuestas.hits + 1,
+      creado_at = NOW()
+  `.catch(e => console.error('[cache] L2 setCached error:', e));
 }
 
 export async function invalidarCache(empresa_id: string, patron?: string): Promise<void> {
@@ -97,13 +85,8 @@ export async function invalidarCache(empresa_id: string, patron?: string): Promi
 
   // L2: fire-and-forget
   const query = patron
-    ? sql`DELETE FROM cache_respuestas WHERE empresa_id = ${empresa_id} AND cache_key LIKE ${'%' + patron + '%'}`
+    ? sql`DELETE FROM cache_respuestas WHERE empresa_id = ${empresa_id} AND clave LIKE ${'%' + patron + '%'}`
     : sql`DELETE FROM cache_respuestas WHERE empresa_id = ${empresa_id}`;
 
-  query.catch(e => {
-    if (!l2ErrorLogado) {
-      console.error('[cache] L2 invalidar error:', e);
-      l2ErrorLogado = true;
-    }
-  });
+  query.catch(e => console.error('[cache] L2 invalidarCache error:', e));
 }
