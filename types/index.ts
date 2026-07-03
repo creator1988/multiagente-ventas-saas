@@ -239,6 +239,11 @@ export interface KapsoV2Item {
     id: string;
     text?: { body: string };
     type: 'text' | 'audio' | 'image' | 'interactive';
+    interactive?: {
+      type: 'list_reply' | 'button_reply';
+      list_reply?: { id: string; title: string };
+      button_reply?: { id: string; title: string };
+    };
   };
   conversation: {
     id: string;
@@ -321,10 +326,43 @@ export type Intencion =
   | 'catalogo'
   | 'historial'
   | 'pedido'
+  | 'ver_ofertas'
+  | 'repetir_pedido'
+  | 'categoria_seleccionada'
+  | 'agregar_pedido'
+  | 'confirmar_pedido'
   | 'consulta_stock'
   | 'consulta_pedido'
   | 'audio'
   | 'desconocido';
+
+export interface CartItem {
+  producto_id: string;
+  nombre: string;
+  cantidad: number;
+  precio_unitario: number;
+}
+
+export interface EstadoFlujo {
+  etapa:
+    | 'inicio'
+    | 'esperando_producto'
+    | 'esperando_cantidad'
+    | 'esperando_confirmacion'
+    | 'esperando_confirm_repetir';
+  producto_contexto?: {
+    id: string;
+    nombre: string;
+    precio: number;
+    stock: number;
+  };
+  carrito: CartItem[];
+  last_categoria_id?: string;
+}
+
+export interface PedidoItemConNombre extends PedidoItem {
+  producto_nombre: string;
+}
 
 export interface ContextoCliente {
   cliente: Cliente | null;

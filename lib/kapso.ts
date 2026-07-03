@@ -87,6 +87,23 @@ export async function enviarReplyButtons(
   await kapsoRequest(payload);
 }
 
+export async function enviarImagen(
+  to: string,
+  url: string,
+  caption?: string
+): Promise<void> {
+  await kapsoRequest({
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'image',
+    image: {
+      link: url,
+      ...(caption ? { caption: caption.substring(0, 1024) } : {}),
+    },
+  });
+}
+
 export async function descargarMedia(mediaId: string): Promise<Buffer> {
   const { apiKey, phoneNumberId } = getCredentials();
 

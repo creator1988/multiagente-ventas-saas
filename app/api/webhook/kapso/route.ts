@@ -9,7 +9,7 @@ import {
   guardarMensaje,
 } from '@/lib/query-cards';
 import { clasificarIntencion } from '@/lib/intenciones';
-import { procesarConClaude } from '@/lib/agent-core';
+import { procesarConClaude, procesarNuevoCliente } from '@/lib/agent-core';
 import { fallbackGroq } from '@/lib/groq';
 import { sendMessage } from '@/lib/kapso/sendMessage';
 import { notificarEscalado } from '@/lib/resend';
@@ -47,6 +47,14 @@ function normalizarWhatsapp(numero: string): string {
 }
 
 function extraerTexto(item: KapsoV2Item): string {
+  if (item.message?.type === 'interactive') {
+    const interactive = item.message?.interactive;
+    return (
+      interactive?.list_reply?.id ??
+      interactive?.button_reply?.id ??
+      ''
+    );
+  }
   return item.message?.text?.body ?? '';
 }
 
@@ -130,8 +138,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const { data: cliente } = await identificarCliente(empresa_id, whatsapp);
         console.log(`[kapso-webhook] Cliente encontrado: ${cliente ? cliente.id : 'NO'}`);
 
-        // 2. Si no existe, crear cliente temporal, enviar bienvenida y terminar
-        //    El SIGUIENTE mensaje será procesado por el agente con contexto completo
+        // 2. Si no existe, crear cliente temporal, mostrar categorías y terminar
         if (!cliente) {
           const { data: nuevo, error: errCliente } = await crearClienteTemporal(empresa_id, whatsapp);
           if (!nuevo) {
@@ -139,11 +146,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             return;
           }
           const conv_id = await obtenerOCrearConversacion(empresa_id, nuevo.id);
-          const bienvenida = '¡Hola! Bienvenido a Distrisanty. Soy tu asistente de pedidos. ¿En qué te puedo ayudar?';
           await guardarMensaje({ conversacion_id: conv_id, rol: 'cliente', contenido: textoUsuario });
-          await guardarMensaje({ conversacion_id: conv_id, rol: 'agente', contenido: bienvenida });
-          await sendMessage(whatsappRaw, bienvenida);
-          console.log(`[kapso-webhook] Bienvenida enviada a tendero nuevo: ${whatsapp}`);
+          await procesarNuevoCliente(empresa_id, nuevo, whatsappRaw, conv_id);
+          console.log(`[kapso-webhook] Bienvenida con categorías enviada a: ${whatsapp}`);
           return;
         }
 

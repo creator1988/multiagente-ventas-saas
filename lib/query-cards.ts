@@ -1,12 +1,16 @@
 import { sql } from './db';
+import { getCached, setCached } from './cache';
 import type {
   Cliente,
+  Categoria,
   Producto,
+  Oferta,
   VOfertaActiva,
   VTopProductoCliente,
   Pedido,
   PedidoItem,
   QueryCardResult,
+  EstadoFlujo,
 } from '@/types';
 
 // ============================================================
@@ -283,6 +287,114 @@ export async function obtenerOCrearConversacion(
   `;
 
   return nueva[0].id as string;
+}
+
+// ============================================================
+// OBTENER CATEGORÍAS
+// ============================================================
+export async function obtenerCategorias(
+  empresa_id: string
+): Promise<QueryCardResult<Categoria[]>> {
+  try {
+    const rows = await sql`
+      SELECT id, empresa_id, nombre, icono_url, orden_display, activo
+      FROM categorias
+      WHERE empresa_id = ${empresa_id}
+        AND activo = true
+      ORDER BY orden_display ASC NULLS LAST, nombre ASC
+    `;
+    return { data: rows as Categoria[], error: null, cached: false };
+  } catch (e) {
+    return { data: null, error: String(e), cached: false };
+  }
+}
+
+// ============================================================
+// PRODUCTOS POR CATEGORÍA (para catálogo de una categoría)
+// ============================================================
+export async function productosPorCategoria(
+  empresa_id: string,
+  categoria_id: string
+): Promise<QueryCardResult<Producto[]>> {
+  try {
+    const rows = await sql`
+      SELECT id, empresa_id, categoria_id, nombre, descripcion,
+             precio_lista, unidad_medida, stock_disponible, url_imagen, activo
+      FROM productos
+      WHERE empresa_id = ${empresa_id}
+        AND categoria_id = ${categoria_id}
+        AND activo = true
+        AND stock_disponible > 0
+      ORDER BY nombre ASC
+      LIMIT 20
+    `;
+    return { data: rows as Producto[], error: null, cached: false };
+  } catch (e) {
+    return { data: null, error: String(e), cached: false };
+  }
+}
+
+// ============================================================
+// OFERTAS PARA MOSTRAR (tabla directa, con url_imagen)
+// ============================================================
+export async function ofertasParaMostrar(
+  empresa_id: string
+): Promise<QueryCardResult<Oferta[]>> {
+  try {
+    const rows = await sql`
+      SELECT id, empresa_id, nombre, descripcion, precio_combo,
+             url_imagen, activo, orden_display
+      FROM ofertas
+      WHERE empresa_id = ${empresa_id}
+        AND activo = true
+      ORDER BY orden_display ASC NULLS LAST, nombre ASC
+      LIMIT 20
+    `;
+    return { data: rows as Oferta[], error: null, cached: false };
+  } catch (e) {
+    return { data: null, error: String(e), cached: false };
+  }
+}
+
+// ============================================================
+// ACTUALIZAR ÚLTIMO PEDIDO DEL CLIENTE
+// ============================================================
+export async function actualizarUltimoPedido(cliente_id: string): Promise<void> {
+  try {
+    await sql`
+      UPDATE clientes
+      SET fecha_ultimo_pedido = NOW()
+      WHERE id = ${cliente_id}
+    `;
+  } catch (e) {
+    console.error('[query-cards] actualizarUltimoPedido error:', e);
+  }
+}
+
+// ============================================================
+// ESTADO DEL FLUJO (carrito y etapa — persistido en cache L1+L2)
+// ============================================================
+const ESTADO_DEFAULT: EstadoFlujo = { etapa: 'inicio', carrito: [] };
+
+export async function getEstadoFlujo(
+  empresa_id: string,
+  conversacion_id: string
+): Promise<EstadoFlujo> {
+  try {
+    const cached = await getCached(empresa_id, 'flujo', conversacion_id);
+    if (!cached) return { ...ESTADO_DEFAULT };
+    return JSON.parse(cached) as EstadoFlujo;
+  } catch {
+    return { ...ESTADO_DEFAULT };
+  }
+}
+
+export async function setEstadoFlujo(
+  empresa_id: string,
+  conversacion_id: string,
+  estado: EstadoFlujo
+): Promise<void> {
+  await setCached(empresa_id, 'flujo', conversacion_id, JSON.stringify(estado), 1800);
 }
 
 // ============================================================
