@@ -87,6 +87,47 @@ export async function enviarReplyButtons(
   await kapsoRequest(payload);
 }
 
+export async function enviarProductoConBoton(
+  to: string,
+  producto: {
+    id: string;
+    nombre: string;
+    precio_lista: number;
+    unidad_medida: string;
+    stock_disponible: number;
+    url_imagen?: string | null;
+  }
+): Promise<void> {
+  const precio = producto.precio_lista.toLocaleString('es-CO');
+  const bodyText = `*${producto.nombre}*\n💰 $${precio} / ${producto.unidad_medida}\n📦 Stock: ${producto.stock_disponible} und`;
+  const boton = { type: 'reply', reply: { id: `add_${producto.id}`, title: 'Agregar' } };
+
+  const interactive: Record<string, unknown> = {
+    type: 'button',
+    body: { text: bodyText.substring(0, 1024) },
+    action: { buttons: [boton] },
+  };
+
+  if (producto.url_imagen) {
+    interactive.header = { type: 'image', image: { link: producto.url_imagen } };
+  }
+
+  await kapsoRequest({
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive,
+  });
+}
+
+export async function descargarAudio(url: string): Promise<Buffer> {
+  const { apiKey } = getCredentials();
+  const resp = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+  if (!resp.ok) throw new Error(`No se pudo descargar audio: ${resp.status}`);
+  return Buffer.from(await resp.arrayBuffer());
+}
+
 export async function enviarImagen(
   to: string,
   url: string,

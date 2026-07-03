@@ -12,6 +12,8 @@ import { clasificarIntencion } from '@/lib/intenciones';
 import { procesarConClaude, procesarNuevoCliente } from '@/lib/agent-core';
 import { fallbackGroq } from '@/lib/groq';
 import { sendMessage } from '@/lib/kapso/sendMessage';
+import { descargarAudio } from '@/lib/kapso';
+import { transcribirAudio } from '@/lib/gemini';
 import { notificarEscalado } from '@/lib/resend';
 import { sql } from '@/lib/db';
 
@@ -46,8 +48,10 @@ function normalizarWhatsapp(numero: string): string {
   return numero.replace(/^\+/, '');
 }
 
-function extraerTexto(item: KapsoV2Item): string {
-  if (item.message?.type === 'interactive') {
+async function extraerTexto(item: KapsoV2Item): Promise<string> {
+  const tipo = item.message?.type;
+
+  if (tipo === 'interactive') {
     const interactive = item.message?.interactive;
     return (
       interactive?.list_reply?.id ??
@@ -55,6 +59,23 @@ function extraerTexto(item: KapsoV2Item): string {
       ''
     );
   }
+
+  if (tipo === 'audio') {
+    const audioUrl = item.message?.audio?.url;
+    if (!audioUrl) return '';
+    try {
+      const buffer = await descargarAudio(audioUrl);
+      const base64 = buffer.toString('base64');
+      const mime = item.message?.audio?.mime_type ?? 'audio/ogg';
+      const transcripcion = await transcribirAudio(base64, mime);
+      console.log(`[kapso-webhook] Audio transcrito: "${transcripcion.substring(0, 80)}"`);
+      return transcripcion;
+    } catch (e) {
+      console.error('[kapso-webhook] Error transcribiendo audio:', e);
+      return '';
+    }
+  }
+
   return item.message?.text?.body ?? '';
 }
 
@@ -124,10 +145,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         const whatsappRaw = grupo.whatsapp;
         const whatsapp = normalizarWhatsapp(whatsappRaw);
 
-        const textoUsuario = grupo.items
-          .map(extraerTexto)
-          .filter(Boolean)
-          .join(' / ');
+        const textos = await Promise.all(grupo.items.map(extraerTexto));
+        const textoUsuario = textos.filter(Boolean).join(' / ');
 
         if (!textoUsuario.trim()) return;
 
@@ -160,13 +179,21 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         // 4. Guardar mensajes entrantes en tabla mensajes
         for (const item of grupo.items) {
-          const texto = extraerTexto(item);
-          if (!texto) continue;
+          const tipo = item.message?.type ?? 'texto';
+          // Para el guardado individual usamos el texto ya extraído en textoUsuario
+          // Audio se guarda como '[audio transcrito]' para no re-llamar Gemini
+          const textoItem =
+            tipo === 'audio'
+              ? '[audio transcrito]'
+              : tipo === 'interactive'
+              ? (item.message?.interactive?.list_reply?.id ?? item.message?.interactive?.button_reply?.id ?? '')
+              : (item.message?.text?.body ?? '');
+          if (!textoItem) continue;
           await guardarMensaje({
             conversacion_id,
             rol: 'cliente',
-            contenido: texto,
-            tipo: item.message?.type ?? 'texto',
+            contenido: textoItem,
+            tipo,
           });
         }
 

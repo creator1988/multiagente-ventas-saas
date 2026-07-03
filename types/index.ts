@@ -238,6 +238,7 @@ export interface KapsoV2Item {
     from: string;
     id: string;
     text?: { body: string };
+    audio?: { url: string; id?: string; mime_type?: string };
     type: 'text' | 'audio' | 'image' | 'interactive';
     interactive?: {
       type: 'list_reply' | 'button_reply';

@@ -16,7 +16,7 @@ import {
 import { completarConClaude } from './claude';
 import { buildSystemPrompt } from './agent-prompt';
 import { getCached, setCached } from './cache';
-import { enviarTexto, enviarListMessage, enviarReplyButtons, enviarImagen } from './kapso';
+import { enviarTexto, enviarListMessage, enviarReplyButtons, enviarImagen, enviarProductoConBoton } from './kapso';
 import { notificarPedidoNuevo } from './resend';
 import { sql } from './db';
 
@@ -186,22 +186,16 @@ async function mostrarProductosCategoria(
   }
 
   for (const p of productos) {
-    const precio = p.precio_lista.toLocaleString('es-CO');
-    const caption = `*${p.nombre}*\nPrecio: $${precio} / ${p.unidad_medida}\nStock: ${p.stock_disponible} und`;
-    if (p.url_imagen) {
-      await enviarImagen(whatsapp, p.url_imagen, caption);
-    } else {
-      await enviarTexto(whatsapp, caption);
-    }
+    await enviarProductoConBoton(whatsapp, p);
   }
 
   const nuevoEstado: EstadoFlujo = { ...estado, last_categoria_id: categoria_id };
   await setEstadoFlujo(empresa_id, conversacion_id, nuevoEstado);
 
-  await enviarReplyButtons(whatsapp, '¿Qué deseas hacer?', [
-    { id: 'btn_agregar',  title: 'Agregar al pedido' },
-    { id: 'btn_ver_cat', title: 'Ver otra categoría' },
-    { id: 'btn_ofertas', title: 'Ver ofertas' },
+  await enviarReplyButtons(whatsapp, '¿Qué más deseas hacer?', [
+    { id: 'btn_ver_cat',  title: 'Ver otra categoría' },
+    { id: 'btn_ofertas',  title: 'Ver ofertas' },
+    { id: 'btn_confirmar', title: 'Confirmar pedido' },
   ]);
   await guardarMensaje({ conversacion_id, rol: 'agente', contenido: `Productos de categoría mostrados (${productos.length} items)` });
 }
@@ -248,6 +242,13 @@ async function iniciarAgregarAlPedido(
   estado: EstadoFlujo
 ): Promise<void> {
   const { empresa_id, whatsapp, conversacion_id, cliente, textoUsuario } = params;
+
+  // Botón "Agregar" pegado a un producto específico: add_{uuid}
+  if (textoUsuario.startsWith('add_')) {
+    const productoId = textoUsuario.replace(/^add_/, '');
+    await seleccionarProducto(params, estado, productoId);
+    return;
+  }
 
   const esBtnAgregar = textoUsuario === 'btn_agregar' || textoUsuario === 'btn_agregar_mas';
 
