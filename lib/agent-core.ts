@@ -98,7 +98,7 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
       break;
 
     case 'ver_ofertas':
-      await mostrarOfertas(params, estado);
+      await mostrarOfertas(params);
       break;
 
     case 'pedido':
@@ -122,7 +122,7 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
       break;
 
     default:
-      await procesarConIA(params, estado);
+      await procesarConIA(params);
       break;
   }
 }
@@ -210,8 +210,7 @@ async function mostrarProductosCategoria(
 // PRIVADO: mostrarOfertas
 // ============================================================
 async function mostrarOfertas(
-  params: ProcesarParams,
-  _estado: EstadoFlujo
+  params: ProcesarParams
 ): Promise<void> {
   const { empresa_id, whatsapp, conversacion_id, cliente } = params;
   const { data: ofertas, error } = await ofertasParaMostrar(empresa_id);
@@ -571,8 +570,7 @@ async function cancelarFlujo(params: ProcesarParams): Promise<void> {
 // PRIVADO: procesarConIA — Claude solo para casos complejos
 // ============================================================
 async function procesarConIA(
-  params: ProcesarParams,
-  _estado: EstadoFlujo
+  params: ProcesarParams
 ): Promise<void> {
   const { empresa_id, whatsapp, conversacion_id, cliente, intencion, textoUsuario, historial } = params;
 
