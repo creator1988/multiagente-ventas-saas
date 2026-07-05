@@ -22,6 +22,30 @@ import { sql } from './db';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+const OFERTAS_REGEX = /\b(promoci[oó]n(es)?|ofertas?|combos?|especiales?)\b/i;
+
+const BUSQUEDA_PRODUCTO_REGEX = /^(quiero|necesito|me\s*das?|dame|p[ií]deme|ponme|comprar?|llevar?|tienes?|busco|buscas?)\s+/i;
+
+function normalizarTexto(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .trim();
+}
+
+function esTextoOfertas(texto: string): boolean {
+  return OFERTAS_REGEX.test(normalizarTexto(texto));
+}
+
+async function detectarCategoriaPorTexto(empresa_id: string, texto: string) {
+  const { data: categorias } = await obtenerCategorias(empresa_id);
+  if (!categorias || categorias.length === 0) return null;
+
+  const textoNorm = normalizarTexto(texto);
+  return categorias.find(c => textoNorm.includes(normalizarTexto(c.nombre))) ?? null;
+}
+
 interface ProcesarParams {
   empresa_id: string;
   whatsapp: string;
@@ -94,6 +118,28 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
   ) {
     await confirmarPedido(params, estado);
     return;
+  }
+
+  // PRIORIDAD 4.5: detección temprana en texto libre (categoría, ofertas o producto por
+  // nombre) — corre ANTES del switch por intención porque el clasificador de regex no
+  // reconoce nombres reales de categorías/productos ni frases sueltas de audio transcrito.
+  const esIdEstructurado = /^(cat_|add_|btn_|qty_)/.test(textoUsuario);
+  if (!esIdEstructurado) {
+    const categoriaDetectada = await detectarCategoriaPorTexto(empresa_id, textoUsuario);
+    if (categoriaDetectada) {
+      await mostrarProductosCategoria(params, estado, `cat_${categoriaDetectada.id}`);
+      return;
+    }
+
+    if (esTextoOfertas(textoUsuario)) {
+      await mostrarOfertas(params);
+      return;
+    }
+
+    if (BUSQUEDA_PRODUCTO_REGEX.test(textoUsuario)) {
+      await iniciarAgregarAlPedido(params, estado);
+      return;
+    }
   }
 
   // PRIORIDAD 5: enrutamiento por intención
@@ -296,10 +342,8 @@ async function iniciarAgregarAlPedido(
     return;
   }
 
-  // Viene de texto "quiero X" — buscar por nombre
-  const textoBusqueda = textoUsuario
-    .replace(/^(quiero|necesito|me\s*das?|dame|pídeme|ponme|comprar?\s+|llevar?\s+)\s*/i, '')
-    .trim();
+  // Viene de texto libre ("quiero X", "tiene X", "busco X") — buscar por nombre
+  const textoBusqueda = textoUsuario.replace(BUSQUEDA_PRODUCTO_REGEX, '').trim();
 
   if (!textoBusqueda) {
     await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
@@ -309,7 +353,7 @@ async function iniciarAgregarAlPedido(
   const { data: productos, error } = await consultarStock(empresa_id, textoBusqueda);
 
   if (error || !productos || productos.length === 0) {
-    const msg = `No encontré "${textoBusqueda}". ¿Puedes describir mejor el producto?`;
+    const msg = 'No encontré ese producto. ¿Quieres ver todas las categorías?';
     await enviarTexto(whatsapp, msg);
     await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
     return;
