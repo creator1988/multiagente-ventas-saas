@@ -28,7 +28,14 @@ const PATRONES: Record<Intencion, RegExp[]> = {
   categoria_seleccionada: [], // detectado por ID 'cat_' antes del loop
   agregar_pedido: [],         // detectado por btn_agregar antes del loop
   confirmar_pedido: [
-    /\b(confirmo|confirmar|s[ií]\s*confirmo|listo|de\s*acuerdo|dale|va\b|ok\b)\b/i,
+    /\b(confirmo|confirmar|confirmado|s[ií]\s*confirmo|de\s*acuerdo|dale|va\b|ok\b)\b/i,
+    /\bterminar(\s+(el\s+)?pedido)?\b/i,
+    /\bfinalizar(\s+(el\s+)?pedido)?\b/i,
+    /\blisto\b/i,
+    /\bya\s*est[aá](?![a-záéíóúñ])/i,
+    /\beso\s*es\s*todo\b/i,
+    /\bpagar\b/i,
+    /\bcerrar\s*pedido\b/i,
   ],
   consulta_stock: [
     /(hay|tienen|stock|disponible|existe|cuánto\s*hay|cuantos\s*hay)/i,
@@ -59,8 +66,15 @@ export function clasificarIntencion(texto: string): Intencion {
   if (texto === 'btn_ver_cat' ||
       texto === 'btn_modificar')                       return 'catalogo';
 
+  // Confirmar pedido tiene prioridad sobre "pedido" genérico: frases como
+  // "quiero pagar" o "quiero terminar el pedido" contienen verbos (quiero)
+  // que también matchean el patrón de armar pedido.
+  if (PATRONES.confirmar_pedido.some(patron => patron.test(texto))) {
+    return 'confirmar_pedido';
+  }
+
   for (const [intencion, patrones] of Object.entries(PATRONES) as [Intencion, RegExp[]][]) {
-    if (SKIP_EN_LOOP.includes(intencion)) continue;
+    if (SKIP_EN_LOOP.includes(intencion) || intencion === 'confirmar_pedido') continue;
     for (const patron of patrones) {
       if (patron.test(texto)) return intencion;
     }

@@ -126,16 +126,22 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     return;
   }
 
-  // PRIORIDAD 4: confirmación cuando hay carrito activo
-  if (
-    intencion === 'confirmar_pedido' &&
-    (estado.etapa === 'esperando_confirmacion' || estado.etapa === 'esperando_confirm_repetir')
-  ) {
-    await confirmarPedido(params, estado);
-    return;
-  }
-  if (intencion === 'confirmar_pedido' && estado.etapa === 'esperando_confirmacion_final') {
-    await registrarPedidoFinal(params, estado);
+  // PRIORIDAD 4: intención de confirmar pedido — se evalúa incondicionalmente y
+  // ANTES de la detección de texto libre (4.5) porque frases como "quiero pagar"
+  // o "quiero terminar el pedido" empiezan igual que una búsqueda de producto.
+  if (intencion === 'confirmar_pedido') {
+    if (estado.carrito.length === 0) {
+      const msg = 'No tienes productos en tu carrito aún. ¿Quieres ver el catálogo?';
+      await enviarTexto(whatsapp, msg);
+      await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+      await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
+      return;
+    }
+    if (estado.etapa === 'esperando_confirmacion_final') {
+      await registrarPedidoFinal(params, estado);
+    } else {
+      await confirmarPedido(params, estado);
+    }
     return;
   }
 
@@ -189,17 +195,6 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     case 'pedido':
     case 'agregar_pedido':
       await iniciarAgregarAlPedido(params, estado);
-      break;
-
-    case 'confirmar_pedido':
-      if (estado.carrito.length > 0) {
-        await confirmarPedido(params, estado);
-      } else {
-        const msg = 'No tienes productos en el carrito. ¿Qué te gustaría pedir?';
-        await enviarTexto(whatsapp, msg);
-        await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
-        await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
-      }
       break;
 
     case 'repetir_pedido':
