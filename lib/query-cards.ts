@@ -211,12 +211,16 @@ export async function registrarPedido(
     console.log('[registrar-pedido] total:', total);
 
     const pedidoRows = await sql`
-      INSERT INTO pedidos (empresa_id, cliente_id, conversacion_id, estado, canal, total, notas)
-      VALUES (${empresa_id}, ${cliente_id}, ${conversacion_id}, 'nuevo', 'whatsapp', ${total}, ${notas ?? null})
+      INSERT INTO pedidos (empresa_id, cliente_id, estado, canal, total, notas)
+      VALUES (${empresa_id}, ${cliente_id}, 'nuevo', 'whatsapp', ${total}, ${notas ?? null})
       RETURNING id
     `;
 
     const pedido_id = pedidoRows[0].id as string;
+
+    await sql`
+      UPDATE conversaciones SET pedido_id = ${pedido_id} WHERE id = ${conversacion_id}
+    `;
 
     for (const item of items) {
       await sql`

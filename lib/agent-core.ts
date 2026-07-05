@@ -601,8 +601,9 @@ async function capturarNombreCliente(
   const { empresa_id, whatsapp, conversacion_id } = params;
   const nombre = textoUsuario.trim();
 
-  if (!nombre) {
-    const msg = 'Por favor escribe tu nombre completo.';
+  const palabras = nombre.split(/\s+/).filter(Boolean);
+  if (palabras.length < 2) {
+    const msg = 'Por favor ingresa un dato válido. ¿Cuál es tu nombre completo?';
     await enviarTexto(whatsapp, msg);
     await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
     return;
@@ -630,8 +631,8 @@ async function capturarDireccionCliente(
   const { empresa_id, whatsapp, conversacion_id } = params;
   const direccion = textoUsuario.trim();
 
-  if (!direccion) {
-    const msg = 'Por favor escribe tu dirección de entrega (calle, número, barrio).';
+  if (direccion.length < 5) {
+    const msg = 'Por favor ingresa un dato válido. ¿Cuál es tu dirección de entrega? (calle, número, barrio)';
     await enviarTexto(whatsapp, msg);
     await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
     return;
