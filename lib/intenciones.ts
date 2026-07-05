@@ -53,7 +53,8 @@ export function clasificarIntencion(texto: string): Intencion {
   if (texto === 'btn_agregar' ||
       texto === 'btn_agregar_mas')                     return 'agregar_pedido';
   if (texto === 'btn_confirmar' ||
-      texto === 'btn_confirmar_igual')                 return 'confirmar_pedido';
+      texto === 'btn_confirmar_igual' ||
+      texto === 'btn_confirmar_final')                 return 'confirmar_pedido';
   if (texto === 'btn_ofertas')                         return 'ver_ofertas';
   if (texto === 'btn_ver_cat' ||
       texto === 'btn_modificar')                       return 'catalogo';

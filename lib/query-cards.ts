@@ -206,8 +206,8 @@ export async function registrarPedido(
     const total = items.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
 
     const pedidoRows = await sql`
-      INSERT INTO pedidos (empresa_id, cliente_id, conversacion_id, estado, total, notas)
-      VALUES (${empresa_id}, ${cliente_id}, ${conversacion_id}, 'pendiente', ${total}, ${notas ?? null})
+      INSERT INTO pedidos (empresa_id, cliente_id, conversacion_id, estado, canal, total, notas)
+      VALUES (${empresa_id}, ${cliente_id}, ${conversacion_id}, 'nuevo', 'whatsapp', ${total}, ${notas ?? null})
       RETURNING id
     `;
 
@@ -368,6 +368,27 @@ export async function actualizarUltimoPedido(cliente_id: string): Promise<void> 
     `;
   } catch (e) {
     console.error('[query-cards] actualizarUltimoPedido error:', e);
+  }
+}
+
+// ============================================================
+// ACTUALIZAR DATOS DE CLIENTE (nombre, barrio, teléfono) — cliente nuevo/incompleto
+// ============================================================
+export async function actualizarDatosCliente(
+  cliente_id: string,
+  datos: { nombre_contacto: string; barrio: string; telefono: string }
+): Promise<QueryCardResult<null>> {
+  try {
+    await sql`
+      UPDATE clientes
+      SET nombre_contacto = ${datos.nombre_contacto},
+          barrio = ${datos.barrio},
+          telefono = ${datos.telefono}
+      WHERE id = ${cliente_id}
+    `;
+    return { data: null, error: null, cached: false };
+  } catch (e) {
+    return { data: null, error: String(e), cached: false };
   }
 }
 

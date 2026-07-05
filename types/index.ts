@@ -71,7 +71,8 @@ export interface Pedido {
   empresa_id: string;
   cliente_id: string;
   conversacion_id?: string;
-  estado: 'pendiente' | 'confirmado' | 'en_preparacion' | 'despachado' | 'entregado' | 'cancelado';
+  estado: 'nuevo' | 'pendiente' | 'confirmado' | 'en_preparacion' | 'despachado' | 'entregado' | 'cancelado';
+  canal?: string;
   total: number;
   notas?: string;
   created_at: Date;
@@ -353,12 +354,20 @@ export interface EstadoFlujo {
     | 'esperando_producto'
     | 'esperando_cantidad'
     | 'esperando_confirmacion'
-    | 'esperando_confirm_repetir';
+    | 'esperando_confirmacion_final'
+    | 'esperando_confirm_repetir'
+    | 'esperando_nombre'
+    | 'esperando_barrio'
+    | 'esperando_telefono_confirmacion';
   producto_contexto?: {
     id: string;
     nombre: string;
     precio: number;
     stock: number;
+  };
+  datos_cliente_temp?: {
+    nombre?: string;
+    barrio?: string;
   };
   carrito: CartItem[];
   last_categoria_id?: string;

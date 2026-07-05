@@ -136,7 +136,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   }
 
   const { estado } = (await request.json()) as { estado: string };
-  const estadosValidos = ['pendiente', 'confirmado', 'en_preparacion', 'despachado', 'entregado', 'cancelado'];
+  const estadosValidos = ['nuevo', 'pendiente', 'confirmado', 'en_preparacion', 'despachado', 'entregado', 'cancelado'];
 
   if (!estadosValidos.includes(estado)) {
     return NextResponse.json({ error: 'Estado inválido' }, { status: 422 });

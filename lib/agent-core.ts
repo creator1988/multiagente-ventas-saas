@@ -9,6 +9,7 @@ import {
   ultimoPedido,
   registrarPedido,
   actualizarUltimoPedido,
+  actualizarDatosCliente,
   guardarMensaje,
   getEstadoFlujo,
   setEstadoFlujo,
@@ -111,12 +112,30 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     return;
   }
 
+  // PRIORIDAD 3.5: recolección de datos de cliente nuevo/incompleto antes de confirmar
+  if (estado.etapa === 'esperando_nombre') {
+    await capturarNombreCliente(params, estado, textoUsuario);
+    return;
+  }
+  if (estado.etapa === 'esperando_barrio') {
+    await capturarBarrioCliente(params, estado, textoUsuario);
+    return;
+  }
+  if (estado.etapa === 'esperando_telefono_confirmacion') {
+    await capturarTelefonoCliente(params, estado, textoUsuario);
+    return;
+  }
+
   // PRIORIDAD 4: confirmación cuando hay carrito activo
   if (
     intencion === 'confirmar_pedido' &&
     (estado.etapa === 'esperando_confirmacion' || estado.etapa === 'esperando_confirm_repetir')
   ) {
     await confirmarPedido(params, estado);
+    return;
+  }
+  if (intencion === 'confirmar_pedido' && estado.etapa === 'esperando_confirmacion_final') {
+    await registrarPedidoFinal(params, estado);
     return;
   }
 
@@ -139,6 +158,16 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     if (BUSQUEDA_PRODUCTO_REGEX.test(textoUsuario)) {
       await iniciarAgregarAlPedido(params, estado);
       return;
+    }
+
+    // Nombre de producto "pelado" sin verbo (ej. "Halls", audio transcrito literal).
+    // Búsqueda silenciosa: si no hay match no respondemos aquí, seguimos el flujo normal.
+    if (textoUsuario.trim().length >= 3) {
+      const { data: productosEncontrados } = await consultarStock(empresa_id, textoUsuario.trim());
+      if (productosEncontrados && productosEncontrados.length > 0) {
+        await presentarProductoParaCantidad(params, estado, productosEncontrados[0]);
+        return;
+      }
     }
   }
 
@@ -359,7 +388,19 @@ async function iniciarAgregarAlPedido(
     return;
   }
 
-  const p = productos[0];
+  await presentarProductoParaCantidad(params, estado, productos[0]);
+}
+
+// ============================================================
+// PRIVADO: presentarProductoParaCantidad — producto encontrado, pide cantidad
+// ============================================================
+async function presentarProductoParaCantidad(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  p: { id: string; nombre: string; precio_lista: number; stock_disponible: number }
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+
   if (p.stock_disponible === 0) {
     const msg = `Lo siento, *${p.nombre}* está agotado en este momento.`;
     await enviarTexto(whatsapp, msg);
@@ -495,9 +536,173 @@ async function manejarCantidad(
 }
 
 // ============================================================
-// PRIVADO: confirmarPedido
+// PRIVADO: esClienteIncompleto — placeholder creado por crearClienteTemporal
+// o sin barrio registrado, necesita datos antes de poder confirmar un pedido
+// ============================================================
+function esClienteIncompleto(cliente: Cliente): boolean {
+  return !cliente.nombre_contacto || cliente.nombre_contacto === 'Cliente nuevo' || !cliente.barrio;
+}
+
+// ============================================================
+// PRIVADO: confirmarPedido — punto de entrada al presionar "Confirmar pedido"
 // ============================================================
 async function confirmarPedido(
+  params: ProcesarParams,
+  estado: EstadoFlujo
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id, cliente } = params;
+
+  if (estado.carrito.length === 0) {
+    const msg = 'No tienes productos en el carrito. ¿Qué deseas pedir?';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
+    return;
+  }
+
+  if (!cliente) {
+    const msg = 'Para confirmar un pedido necesito tus datos. Un asesor te contactará pronto.';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  // PASO A: cliente nuevo/incompleto — recolectar nombre, barrio y teléfono antes de registrar
+  if (esClienteIncompleto(cliente)) {
+    const msg = '¿Cuál es tu nombre completo?';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'esperando_nombre' });
+    return;
+  }
+
+  // PASO B: cliente ya registrado — confirmar directamente con resumen del pedido
+  await mostrarResumenConfirmacion(params, estado);
+}
+
+// ============================================================
+// PRIVADO: capturarNombreCliente — etapa "esperando_nombre"
+// ============================================================
+async function capturarNombreCliente(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  textoUsuario: string
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+  const nombre = textoUsuario.trim();
+
+  if (!nombre) {
+    const msg = 'Por favor escribe tu nombre completo.';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  const msg = '¿En qué barrio estás ubicado?';
+  await enviarTexto(whatsapp, msg);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, {
+    ...estado,
+    etapa: 'esperando_barrio',
+    datos_cliente_temp: { ...estado.datos_cliente_temp, nombre },
+  });
+}
+
+// ============================================================
+// PRIVADO: capturarBarrioCliente — etapa "esperando_barrio"
+// ============================================================
+async function capturarBarrioCliente(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  textoUsuario: string
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+  const barrio = textoUsuario.trim();
+
+  if (!barrio) {
+    const msg = 'Por favor escribe el nombre de tu barrio.';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  const msg = `¿Tu número de contacto es ${whatsapp}? Responde Sí o escribe otro número`;
+  await enviarTexto(whatsapp, msg);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, {
+    ...estado,
+    etapa: 'esperando_telefono_confirmacion',
+    datos_cliente_temp: { ...estado.datos_cliente_temp, barrio },
+  });
+}
+
+// ============================================================
+// PRIVADO: capturarTelefonoCliente — etapa "esperando_telefono_confirmacion"
+// Al confirmar, actualiza clientes y registra el pedido directamente (PASO C)
+// ============================================================
+async function capturarTelefonoCliente(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  textoUsuario: string
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id, cliente } = params;
+
+  if (!cliente) {
+    await mostrarCategorias(empresa_id, null, whatsapp, conversacion_id);
+    return;
+  }
+
+  const esSi = /^s[ií]\b/i.test(textoUsuario.trim());
+  const telefono = esSi ? whatsapp.replace(/^\+/, '') : textoUsuario.replace(/\D/g, '');
+
+  if (!esSi && telefono.length < 7) {
+    const msg = 'Ese número no parece válido. Escríbelo de nuevo o responde Sí para usar tu número de WhatsApp.';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  const nombre = estado.datos_cliente_temp?.nombre ?? cliente.nombre_contacto ?? '';
+  const barrio = estado.datos_cliente_temp?.barrio ?? '';
+
+  await actualizarDatosCliente(cliente.id, { nombre_contacto: nombre, barrio, telefono });
+
+  const clienteActualizado: Cliente = { ...cliente, nombre_contacto: nombre, barrio, telefono };
+  const nuevoEstado: EstadoFlujo = { ...estado, etapa: 'inicio', datos_cliente_temp: undefined };
+  await setEstadoFlujo(empresa_id, conversacion_id, nuevoEstado);
+
+  await registrarPedidoFinal({ ...params, cliente: clienteActualizado }, nuevoEstado);
+}
+
+// ============================================================
+// PRIVADO: mostrarResumenConfirmacion — PASO B, cliente ya completo
+// ============================================================
+async function mostrarResumenConfirmacion(
+  params: ProcesarParams,
+  estado: EstadoFlujo
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+
+  const itemsStr = estado.carrito.map(i => `${i.nombre} x${i.cantidad}`).join(', ');
+  const total = estado.carrito.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
+  const msg = `¿Confirmas tu pedido de ${itemsStr} por $${total.toLocaleString('es-CO')}? Tu asesor coordinará la entrega.`;
+
+  await enviarReplyButtons(whatsapp, msg, [
+    { id: 'btn_confirmar_final', title: 'Sí, confirmar' },
+    { id: 'btn_modificar',       title: 'Modificar' },
+    { id: 'btn_cancelar',        title: 'Cancelar' },
+  ]);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'esperando_confirmacion_final' });
+}
+
+// ============================================================
+// PRIVADO: registrarPedidoFinal — PASO C, INSERTs + descuento de stock + notificación
+// ============================================================
+async function registrarPedidoFinal(
   params: ProcesarParams,
   estado: EstadoFlujo
 ): Promise<void> {
@@ -535,7 +740,7 @@ async function confirmarPedido(
     const msg = 'Hubo un error al registrar tu pedido. Un asesor lo confirmará manualmente.';
     await enviarTexto(whatsapp, msg);
     await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
-    console.error('[agent-core] confirmarPedido error:', error);
+    console.error('[agent-core] registrarPedidoFinal error:', error);
     return;
   }
 
@@ -543,8 +748,8 @@ async function confirmarPedido(
   await setEstadoFlujo(empresa_id, conversacion_id, { etapa: 'inicio', carrito: [] });
 
   const idCorto = resultado.pedido_id.substring(0, 8).toUpperCase();
-  const totalStr = resultado.total.toLocaleString('es-CO');
-  const msg = `✅ Pedido #${idCorto} confirmado por $${totalStr}. Tu asesor coordinará la entrega. ¡Gracias! 🙌`;
+  const nombreAsesor = process.env.ASESOR_NOMBRE ?? 'tu asesor';
+  const msg = `✅ Pedido #${idCorto} registrado. Tu asesor ${nombreAsesor} te contactará para coordinar la entrega. ¡Gracias!`;
 
   await enviarTexto(whatsapp, msg);
   await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
