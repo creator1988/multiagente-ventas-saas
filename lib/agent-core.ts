@@ -117,8 +117,8 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     await capturarNombreCliente(params, estado, textoUsuario);
     return;
   }
-  if (estado.etapa === 'esperando_barrio') {
-    await capturarBarrioCliente(params, estado, textoUsuario);
+  if (estado.etapa === 'esperando_direccion') {
+    await capturarDireccionCliente(params, estado, textoUsuario);
     return;
   }
   if (estado.etapa === 'esperando_telefono_confirmacion') {
@@ -232,9 +232,19 @@ async function mostrarCategorias(
   }
 
   const nombre = cliente?.nombre_negocio ?? cliente?.nombre_contacto;
-  const saludo = nombre
-    ? `¡Hola ${nombre}! 👋 ¿Qué categoría te interesa hoy?`
-    : '¡Hola! 👋 ¿Qué categoría te interesa hoy?';
+  let saludo: string;
+  if (nombre && cliente?.fecha_ultimo_pedido) {
+    const fecha = new Date(cliente.fecha_ultimo_pedido).toLocaleDateString('es-CO', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric',
+    });
+    saludo = `¡Hola ${nombre}! 👋 Te reconozco — tu último pedido fue el ${fecha}. ¿Qué categoría te interesa hoy?`;
+  } else if (nombre) {
+    saludo = `¡Hola ${nombre}! 👋 ¿Qué categoría te interesa hoy?`;
+  } else {
+    saludo = '¡Hola! 👋 ¿Qué categoría te interesa hoy?';
+  }
 
   const rows = categorias.slice(0, 10).map(c => ({
     id: `cat_${c.id}`,
@@ -537,10 +547,10 @@ async function manejarCantidad(
 
 // ============================================================
 // PRIVADO: esClienteIncompleto — placeholder creado por crearClienteTemporal
-// o sin barrio registrado, necesita datos antes de poder confirmar un pedido
+// o sin dirección registrada, necesita datos antes de poder confirmar un pedido
 // ============================================================
 function esClienteIncompleto(cliente: Cliente): boolean {
-  return !cliente.nombre_contacto || cliente.nombre_contacto === 'Cliente nuevo' || !cliente.barrio;
+  return !cliente.nombre_contacto || cliente.nombre_contacto === 'Cliente nuevo' || !cliente.direccion;
 }
 
 // ============================================================
@@ -567,7 +577,7 @@ async function confirmarPedido(
     return;
   }
 
-  // PASO A: cliente nuevo/incompleto — recolectar nombre, barrio y teléfono antes de registrar
+  // PASO A: cliente nuevo/incompleto — recolectar nombre, dirección y teléfono antes de registrar
   if (esClienteIncompleto(cliente)) {
     const msg = '¿Cuál es tu nombre completo?';
     await enviarTexto(whatsapp, msg);
@@ -598,30 +608,30 @@ async function capturarNombreCliente(
     return;
   }
 
-  const msg = '¿En qué barrio estás ubicado?';
+  const msg = '¿Cuál es tu dirección de entrega? (calle, número, barrio)';
   await enviarTexto(whatsapp, msg);
   await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
 
   await setEstadoFlujo(empresa_id, conversacion_id, {
     ...estado,
-    etapa: 'esperando_barrio',
+    etapa: 'esperando_direccion',
     datos_cliente_temp: { ...estado.datos_cliente_temp, nombre },
   });
 }
 
 // ============================================================
-// PRIVADO: capturarBarrioCliente — etapa "esperando_barrio"
+// PRIVADO: capturarDireccionCliente — etapa "esperando_direccion"
 // ============================================================
-async function capturarBarrioCliente(
+async function capturarDireccionCliente(
   params: ProcesarParams,
   estado: EstadoFlujo,
   textoUsuario: string
 ): Promise<void> {
   const { empresa_id, whatsapp, conversacion_id } = params;
-  const barrio = textoUsuario.trim();
+  const direccion = textoUsuario.trim();
 
-  if (!barrio) {
-    const msg = 'Por favor escribe el nombre de tu barrio.';
+  if (!direccion) {
+    const msg = 'Por favor escribe tu dirección de entrega (calle, número, barrio).';
     await enviarTexto(whatsapp, msg);
     await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
     return;
@@ -634,7 +644,7 @@ async function capturarBarrioCliente(
   await setEstadoFlujo(empresa_id, conversacion_id, {
     ...estado,
     etapa: 'esperando_telefono_confirmacion',
-    datos_cliente_temp: { ...estado.datos_cliente_temp, barrio },
+    datos_cliente_temp: { ...estado.datos_cliente_temp, direccion },
   });
 }
 
@@ -665,15 +675,15 @@ async function capturarTelefonoCliente(
   }
 
   const nombre = estado.datos_cliente_temp?.nombre ?? cliente.nombre_contacto ?? '';
-  const barrio = estado.datos_cliente_temp?.barrio ?? '';
+  const direccion = estado.datos_cliente_temp?.direccion ?? '';
 
-  await actualizarDatosCliente(cliente.id, { nombre_contacto: nombre, barrio, telefono });
+  await actualizarDatosCliente(cliente.id, { nombre_contacto: nombre, direccion, telefono });
 
-  const clienteActualizado: Cliente = { ...cliente, nombre_contacto: nombre, barrio, telefono };
+  const clienteActualizado: Cliente = { ...cliente, nombre_contacto: nombre, direccion, telefono };
   const nuevoEstado: EstadoFlujo = { ...estado, etapa: 'inicio', datos_cliente_temp: undefined };
   await setEstadoFlujo(empresa_id, conversacion_id, nuevoEstado);
 
-  await registrarPedidoFinal({ ...params, cliente: clienteActualizado }, nuevoEstado);
+  await registrarPedidoFinal({ ...params, cliente: clienteActualizado }, nuevoEstado, true);
 }
 
 // ============================================================
@@ -704,7 +714,8 @@ async function mostrarResumenConfirmacion(
 // ============================================================
 async function registrarPedidoFinal(
   params: ProcesarParams,
-  estado: EstadoFlujo
+  estado: EstadoFlujo,
+  esPrimeraVez: boolean = false
 ): Promise<void> {
   const { empresa_id, whatsapp, conversacion_id, cliente } = params;
 
@@ -749,7 +760,9 @@ async function registrarPedidoFinal(
 
   const idCorto = resultado.pedido_id.substring(0, 8).toUpperCase();
   const nombreAsesor = process.env.ASESOR_NOMBRE ?? 'tu asesor';
-  const msg = `✅ Pedido #${idCorto} registrado. Tu asesor ${nombreAsesor} te contactará para coordinar la entrega. ¡Gracias!`;
+  const msg = esPrimeraVez
+    ? `✅ Pedido #${idCorto} registrado. Tu asesor ${nombreAsesor} te contactará para coordinar la entrega. ¡Gracias!\n\nA partir de ahora te reconoceremos cada vez que escribas desde este número. ¡Bienvenido a Distrisanty!`
+    : `✅ Pedido #${idCorto} registrado. Tu asesor ${nombreAsesor} te contactará para coordinar la entrega. ¡Gracias!`;
 
   await enviarTexto(whatsapp, msg);
   await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });

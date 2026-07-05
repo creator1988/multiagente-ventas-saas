@@ -357,7 +357,7 @@ export interface EstadoFlujo {
     | 'esperando_confirmacion_final'
     | 'esperando_confirm_repetir'
     | 'esperando_nombre'
-    | 'esperando_barrio'
+    | 'esperando_direccion'
     | 'esperando_telefono_confirmacion';
   producto_contexto?: {
     id: string;
@@ -367,7 +367,7 @@ export interface EstadoFlujo {
   };
   datos_cliente_temp?: {
     nombre?: string;
-    barrio?: string;
+    direccion?: string;
   };
   carrito: CartItem[];
   last_categoria_id?: string;

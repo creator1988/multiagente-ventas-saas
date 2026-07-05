@@ -205,6 +205,11 @@ export async function registrarPedido(
   try {
     const total = items.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
 
+    console.log('[registrar-pedido] cliente_id:', cliente_id);
+    console.log('[registrar-pedido] empresa_id:', empresa_id);
+    console.log('[registrar-pedido] carrito:', JSON.stringify(items));
+    console.log('[registrar-pedido] total:', total);
+
     const pedidoRows = await sql`
       INSERT INTO pedidos (empresa_id, cliente_id, conversacion_id, estado, canal, total, notas)
       VALUES (${empresa_id}, ${cliente_id}, ${conversacion_id}, 'nuevo', 'whatsapp', ${total}, ${notas ?? null})
@@ -238,6 +243,8 @@ export async function registrarPedido(
 
     return { data: { pedido_id, total }, error: null, cached: false };
   } catch (e) {
+    const err = e as { message?: string; code?: string };
+    console.log('[registrar-pedido] ERROR:', err.message, err.code);
     return { data: null, error: String(e), cached: false };
   }
 }
@@ -372,17 +379,17 @@ export async function actualizarUltimoPedido(cliente_id: string): Promise<void> 
 }
 
 // ============================================================
-// ACTUALIZAR DATOS DE CLIENTE (nombre, barrio, teléfono) — cliente nuevo/incompleto
+// ACTUALIZAR DATOS DE CLIENTE (nombre, dirección, teléfono) — cliente nuevo/incompleto
 // ============================================================
 export async function actualizarDatosCliente(
   cliente_id: string,
-  datos: { nombre_contacto: string; barrio: string; telefono: string }
+  datos: { nombre_contacto: string; direccion: string; telefono: string }
 ): Promise<QueryCardResult<null>> {
   try {
     await sql`
       UPDATE clientes
       SET nombre_contacto = ${datos.nombre_contacto},
-          barrio = ${datos.barrio},
+          direccion = ${datos.direccion},
           telefono = ${datos.telefono}
       WHERE id = ${cliente_id}
     `;
