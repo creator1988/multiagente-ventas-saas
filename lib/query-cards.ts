@@ -427,7 +427,7 @@ export async function setEstadoFlujo(
   conversacion_id: string,
   estado: EstadoFlujo
 ): Promise<void> {
-  await setCached(empresa_id, 'flujo', conversacion_id, JSON.stringify(estado), 1800);
+  await setCached(empresa_id, 'flujo', conversacion_id, JSON.stringify(estado), 900);
 }
 
 // ============================================================

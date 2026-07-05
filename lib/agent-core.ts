@@ -693,7 +693,7 @@ async function mostrarResumenConfirmacion(
 
   const itemsStr = estado.carrito.map(i => `${i.nombre} x${i.cantidad}`).join(', ');
   const total = estado.carrito.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
-  const msg = `¿Confirmas tu pedido de ${itemsStr} por $${total.toLocaleString('es-CO')}? Tu asesor coordinará la entrega.`;
+  const msg = `¿Confirmas tu pedido de ${itemsStr} por $${total.toLocaleString('es-CO')}? Se entrega en un plazo de 48 horas desde la confirmación.`;
 
   await enviarReplyButtons(whatsapp, msg, [
     { id: 'btn_confirmar_final', title: 'Sí, confirmar' },
@@ -756,10 +756,9 @@ async function registrarPedidoFinal(
   await setEstadoFlujo(empresa_id, conversacion_id, { etapa: 'inicio', carrito: [] });
 
   const idCorto = resultado.pedido_id.substring(0, 8).toUpperCase();
-  const nombreAsesor = process.env.ASESOR_NOMBRE ?? 'tu asesor';
   const msg = esPrimeraVez
-    ? `✅ Pedido #${idCorto} registrado. Tu asesor ${nombreAsesor} te contactará para coordinar la entrega. ¡Gracias!\n\nA partir de ahora te reconoceremos cada vez que escribas desde este número. ¡Bienvenido a Distrisanty!`
-    : `✅ Pedido #${idCorto} registrado. Tu asesor ${nombreAsesor} te contactará para coordinar la entrega. ¡Gracias!`;
+    ? `✅ Pedido #${idCorto} registrado. Lo recibirás en un plazo de 48 horas. ¡Gracias!\n\nA partir de ahora te reconoceremos cada vez que escribas desde este número. ¡Bienvenido a Distrisanty!`
+    : `✅ Pedido #${idCorto} registrado. Lo recibirás en un plazo de 48 horas. ¡Gracias!`;
 
   await enviarTexto(whatsapp, msg);
   await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
