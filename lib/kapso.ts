@@ -122,8 +122,9 @@ export async function enviarProductoConBoton(
 }
 
 export async function descargarAudio(url: string): Promise<Buffer> {
-  const { apiKey } = getCredentials();
-  const resp = await fetch(url, { headers: { 'Authorization': `Bearer ${apiKey}` } });
+  // Kapso no usa Bearer/X-API-Key para descargar media: la URL del webhook
+  // (o el download_url del proxy) ya trae el token de autenticación embebido.
+  const resp = await fetch(url);
   if (!resp.ok) throw new Error(`No se pudo descargar audio: ${resp.status}`);
   return Buffer.from(await resp.arrayBuffer());
 }
@@ -149,15 +150,16 @@ export async function descargarMedia(mediaId: string): Promise<Buffer> {
   const { apiKey, phoneNumberId } = getCredentials();
 
   const urlResp = await fetch(
-    `https://api.kapso.ai/meta/whatsapp/v24.0/${phoneNumberId}/media/${mediaId}`,
+    `https://api.kapso.ai/meta/whatsapp/v24.0/${mediaId}?phone_number_id=${phoneNumberId}`,
     { headers: { 'X-API-Key': apiKey } }
   );
 
   if (!urlResp.ok) throw new Error(`No se pudo obtener URL del media: ${mediaId}`);
 
-  const { url } = (await urlResp.json()) as { url: string };
+  const { download_url } = (await urlResp.json()) as { download_url: string };
 
-  const mediaResp = await fetch(url, { headers: { 'X-API-Key': apiKey } });
+  // download_url es el proxy de Kapso con el token embebido: sin headers.
+  const mediaResp = await fetch(download_url);
 
   if (!mediaResp.ok) throw new Error(`No se pudo descargar el media: ${mediaId}`);
 
