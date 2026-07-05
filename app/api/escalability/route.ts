@@ -25,7 +25,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           SUM(CASE WHEN estado = 'escalada' THEN 1 ELSE 0 END) AS escaladas
         FROM conversaciones
         WHERE empresa_id = ${empresa_id}
-          AND iniciada_at >= NOW() - INTERVAL '7 days'
+          AND inicio >= NOW() - INTERVAL '7 days'
       `,
       sql`
         SELECT
@@ -34,7 +34,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           AVG(total) AS ticket_promedio
         FROM pedidos
         WHERE empresa_id = ${empresa_id}
-          AND created_at >= NOW() - INTERVAL '7 days'
+          AND creado_at >= NOW() - INTERVAL '7 days'
           AND estado != 'cancelado'
       `,
       sql`SELECT COUNT(*) AS total FROM v_clientes_inactivos WHERE empresa_id = ${empresa_id}`,
@@ -44,7 +44,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         JOIN productos p ON p.id = pi.producto_id
         JOIN pedidos pe ON pe.id = pi.pedido_id
         WHERE pe.empresa_id = ${empresa_id}
-          AND pe.created_at >= NOW() - INTERVAL '7 days'
+          AND pe.creado_at >= NOW() - INTERVAL '7 days'
         GROUP BY p.nombre
         ORDER BY unidades_vendidas DESC
         LIMIT 10
@@ -90,16 +90,15 @@ Responde en JSON con este formato:
 
     // Guardar análisis en DB para historial
     await sql`
-      INSERT INTO cache_respuestas (empresa_id, cache_key, respuesta, ttl_seconds, expires_at)
+      INSERT INTO cache_respuestas (empresa_id, clave, respuesta, expira_at)
       VALUES (
         ${empresa_id},
         ${'escalability_weekly_' + new Date().toISOString().split('T')[0]},
         ${JSON.stringify({ metricas, analisis })},
-        604800,
         NOW() + INTERVAL '7 days'
       )
-      ON CONFLICT (empresa_id, cache_key) DO UPDATE
-      SET respuesta = EXCLUDED.respuesta, expires_at = EXCLUDED.expires_at
+      ON CONFLICT (empresa_id, clave) DO UPDATE
+      SET respuesta = EXCLUDED.respuesta, expira_at = EXCLUDED.expira_at
     `;
 
     return NextResponse.json({ data: { metricas, analisis } });
@@ -116,17 +115,17 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 
   try {
     const rows = await sql`
-      SELECT respuesta, created_at FROM cache_respuestas
+      SELECT respuesta, creado_at FROM cache_respuestas
       WHERE empresa_id = ${empresa_id}
-        AND cache_key LIKE 'escalability_weekly_%'
-      ORDER BY created_at DESC
+        AND clave LIKE 'escalability_weekly_%'
+      ORDER BY creado_at DESC
       LIMIT 4
     `;
 
     return NextResponse.json({
       data: rows.map((r) => ({
         ...JSON.parse(r.respuesta as string),
-        fecha: r.created_at,
+        fecha: r.creado_at,
       })),
     });
   } catch (error) {

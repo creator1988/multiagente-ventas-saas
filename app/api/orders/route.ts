@@ -13,6 +13,7 @@ const PedidoSchema = z.object({
   items: z.array(
     z.object({
       producto_id: z.string().uuid(),
+      nombre: z.string().min(1),
       cantidad: z.number().int().positive(),
       precio_unitario: z.number().positive(),
     })
@@ -34,31 +35,31 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       rows = await sql`SELECT * FROM v_pedidos_hoy WHERE empresa_id = ${empresa_id}`;
     } else if (cliente_id) {
       rows = await sql`
-        SELECT p.*, c.nombre AS cliente_nombre
+        SELECT p.*, COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre
         FROM pedidos p
         JOIN clientes c ON c.id = p.cliente_id
         WHERE p.empresa_id = ${empresa_id}
           AND p.cliente_id = ${cliente_id}
-        ORDER BY p.created_at DESC
+        ORDER BY p.creado_at DESC
         LIMIT 50
       `;
     } else if (estado) {
       rows = await sql`
-        SELECT p.*, c.nombre AS cliente_nombre
+        SELECT p.*, COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre
         FROM pedidos p
         JOIN clientes c ON c.id = p.cliente_id
         WHERE p.empresa_id = ${empresa_id}
           AND p.estado = ${estado}
-        ORDER BY p.created_at DESC
+        ORDER BY p.creado_at DESC
         LIMIT 100
       `;
     } else {
       rows = await sql`
-        SELECT p.*, c.nombre AS cliente_nombre
+        SELECT p.*, COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre
         FROM pedidos p
         JOIN clientes c ON c.id = p.cliente_id
         WHERE p.empresa_id = ${empresa_id}
-        ORDER BY p.created_at DESC
+        ORDER BY p.creado_at DESC
         LIMIT 100
       `;
     }
@@ -94,9 +95,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     // Obtener datos del cliente para notificación
     const clienteRows = await sql`
-      SELECT nombre, email FROM clientes WHERE id = ${cliente_id} LIMIT 1
+      SELECT nombre_negocio, nombre_contacto FROM clientes WHERE id = ${cliente_id} LIMIT 1
     `;
-    const cliente = clienteRows[0] as { nombre: string; email?: string } | undefined;
+    const cliente = clienteRows[0] as { nombre_negocio: string | null; nombre_contacto: string | null } | undefined;
 
     // Obtener nombres de productos para el email
     const productosRows = await sql`
@@ -109,7 +110,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (process.env.ASESOR_EMAIL && cliente) {
       await notificarPedidoNuevo({
         asesor_email: process.env.ASESOR_EMAIL,
-        cliente_nombre: cliente.nombre,
+        cliente_nombre: cliente.nombre_negocio ?? cliente.nombre_contacto ?? 'Cliente',
         pedido_id: result.data!.pedido_id,
         total: result.data!.total,
         items: productosRows.map((r) => ({
@@ -145,7 +146,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
   try {
     await sql`
       UPDATE pedidos
-      SET estado = ${estado}, updated_at = NOW()
+      SET estado = ${estado}, actualizado_at = NOW()
       WHERE id = ${pedido_id}
     `;
     return NextResponse.json({ ok: true });

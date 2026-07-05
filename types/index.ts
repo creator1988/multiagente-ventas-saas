@@ -70,19 +70,27 @@ export interface Pedido {
   id: string;
   empresa_id: string;
   cliente_id: string;
-  conversacion_id?: string;
+  ruta_id?: string;
+  numero_pedido?: string;
+  fecha?: Date;
   estado: 'nuevo' | 'pendiente' | 'confirmado' | 'en_preparacion' | 'despachado' | 'entregado' | 'cancelado';
   canal?: string;
   total: number;
   notas?: string;
-  created_at: Date;
-  updated_at: Date;
+  pagado?: boolean;
+  wompi_link?: string;
+  wompi_referencia?: string;
+  creado_at: Date;
+  actualizado_at: Date;
 }
 
 export interface PedidoItem {
   id: string;
   pedido_id: string;
   producto_id: string;
+  oferta_id?: string;
+  tipo?: string;
+  nombre_snapshot: string;
   cantidad: number;
   precio_unitario: number;
   subtotal: number;
@@ -115,11 +123,11 @@ export interface Mensaje {
 export interface CacheRespuesta {
   id: string;
   empresa_id: string;
-  cache_key: string;
+  clave: string;
   respuesta: string;
-  ttl_seconds: number;
-  created_at: Date;
-  expires_at: Date;
+  hits: number;
+  creado_at: Date;
+  expira_at: Date;
 }
 
 // ============================================================

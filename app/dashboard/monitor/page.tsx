@@ -9,8 +9,7 @@ interface ConversacionConScore {
   estado: 'activa' | 'completada' | 'escalada';
   isa_score?: number;
   total_mensajes: number;
-  iniciada_at: string;
-  finalizada_at?: string;
+  inicio: string;
 }
 
 function ScoreBadge({ score }: { score?: number }) {
@@ -69,7 +68,7 @@ export default function MonitorPage() {
               <p className="font-medium text-gray-900">{c.cliente_nombre ?? c.whatsapp_numero}</p>
               <p className="text-sm text-gray-500">
                 {c.total_mensajes} mensajes ·{' '}
-                {new Date(c.iniciada_at).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
+                {new Date(c.inicio).toLocaleString('es-CO', { dateStyle: 'short', timeStyle: 'short' })}
               </p>
             </div>
             <div className="flex items-center gap-6">

@@ -162,7 +162,7 @@ export async function ultimoPedido(
       SELECT * FROM pedidos
       WHERE empresa_id = ${empresa_id}
         AND cliente_id = ${cliente_id}
-      ORDER BY created_at DESC
+      ORDER BY creado_at DESC
       LIMIT 1
     `;
 
@@ -191,6 +191,7 @@ export async function ultimoPedido(
 // ============================================================
 export interface ItemPedido {
   producto_id: string;
+  nombre: string;
   cantidad: number;
   precio_unitario: number;
 }
@@ -224,12 +225,13 @@ export async function registrarPedido(
 
     for (const item of items) {
       await sql`
-        INSERT INTO pedido_items (pedido_id, producto_id, cantidad, precio_unitario)
+        INSERT INTO pedido_items (pedido_id, producto_id, cantidad, precio_unitario, nombre_snapshot)
         VALUES (
           ${pedido_id},
           ${item.producto_id},
           ${item.cantidad},
-          ${item.precio_unitario}
+          ${item.precio_unitario},
+          ${item.nombre}
         )
       `;
     }

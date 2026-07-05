@@ -15,26 +15,28 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   try {
     const rows = estado
       ? await sql`
-          SELECT c.*, cl.nombre AS cliente_nombre,
+          SELECT c.*, COALESCE(cl.nombre_negocio, cl.nombre_contacto) AS cliente_nombre,
+                 cl.whatsapp AS whatsapp_numero,
                  COUNT(m.id) AS total_mensajes
           FROM conversaciones c
           LEFT JOIN clientes cl ON cl.id = c.cliente_id
           LEFT JOIN mensajes m ON m.conversacion_id = c.id
           WHERE c.empresa_id = ${empresa_id}
             AND c.estado = ${estado}
-          GROUP BY c.id, cl.nombre
-          ORDER BY c.iniciada_at DESC
+          GROUP BY c.id, cl.nombre_negocio, cl.nombre_contacto, cl.whatsapp
+          ORDER BY c.inicio DESC
           LIMIT 50
         `
       : await sql`
-          SELECT c.*, cl.nombre AS cliente_nombre,
+          SELECT c.*, COALESCE(cl.nombre_negocio, cl.nombre_contacto) AS cliente_nombre,
+                 cl.whatsapp AS whatsapp_numero,
                  COUNT(m.id) AS total_mensajes
           FROM conversaciones c
           LEFT JOIN clientes cl ON cl.id = c.cliente_id
           LEFT JOIN mensajes m ON m.conversacion_id = c.id
           WHERE c.empresa_id = ${empresa_id}
-          GROUP BY c.id, cl.nombre
-          ORDER BY c.iniciada_at DESC
+          GROUP BY c.id, cl.nombre_negocio, cl.nombre_contacto, cl.whatsapp
+          ORDER BY c.inicio DESC
           LIMIT 50
         `;
 
@@ -56,10 +58,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     // Obtener todos los mensajes de la conversación
     const mensajes = await sql`
-      SELECT rol, contenido, created_at
+      SELECT rol, contenido, timestamp
       FROM mensajes
       WHERE conversacion_id = ${conversacion_id}
-      ORDER BY created_at ASC
+      ORDER BY timestamp ASC
     `;
 
     if (!mensajes.length) {
@@ -94,8 +96,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     await sql`
       UPDATE conversaciones
       SET isa_score = ${resultado.score},
-          estado = 'completada',
-          finalizada_at = NOW()
+          estado = 'completada'
       WHERE id = ${conversacion_id}
     `;
 

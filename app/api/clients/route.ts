@@ -15,8 +15,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     if (whatsapp) {
       rows = await sql`
         SELECT c.*,
+               COALESCE(c.nombre_negocio, c.nombre_contacto) AS nombre,
                COUNT(p.id) AS total_pedidos,
-               MAX(p.created_at) AS ultimo_pedido
+               MAX(p.creado_at) AS ultimo_pedido
         FROM clientes c
         LEFT JOIN pedidos p ON p.cliente_id = c.id
         WHERE c.empresa_id = ${empresa_id}
@@ -31,14 +32,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     } else {
       rows = await sql`
         SELECT c.*,
+               COALESCE(c.nombre_negocio, c.nombre_contacto) AS nombre,
                COUNT(p.id) AS total_pedidos,
-               MAX(p.created_at) AS ultimo_pedido
+               MAX(p.creado_at) AS ultimo_pedido
         FROM clientes c
         LEFT JOIN pedidos p ON p.cliente_id = c.id
         WHERE c.empresa_id = ${empresa_id}
           AND c.activo = true
         GROUP BY c.id
-        ORDER BY c.nombre
+        ORDER BY COALESCE(c.nombre_negocio, c.nombre_contacto)
       `;
     }
 

@@ -6,7 +6,6 @@ interface ClienteConHistorial {
   id: string;
   nombre: string;
   whatsapp: string;
-  credito_disponible: number;
   activo: boolean;
   ultimo_pedido?: string;
   total_pedidos?: number;
@@ -55,10 +54,6 @@ export default function ClientsPage() {
               <p className="text-sm text-gray-500">{c.whatsapp}</p>
             </div>
             <div className="flex items-center gap-6 text-right">
-              <div>
-                <p className="text-sm text-gray-500">Crédito disponible</p>
-                <p className="font-semibold text-green-700">${Number(c.credito_disponible).toLocaleString('es-CO')}</p>
-              </div>
               <div>
                 <p className="text-sm text-gray-500">Pedidos</p>
                 <p className="font-semibold">{c.total_pedidos ?? 0}</p>

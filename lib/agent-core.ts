@@ -737,6 +737,7 @@ async function registrarPedidoFinal(
 
   const items: ItemPedido[] = estado.carrito.map(i => ({
     producto_id: i.producto_id,
+    nombre: i.nombre,
     cantidad: i.cantidad,
     precio_unitario: i.precio_unitario,
   }));
