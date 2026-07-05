@@ -142,19 +142,23 @@ export async function descargarMedia(mediaId: string, phoneNumberIdOverride?: st
   const { apiKey, phoneNumberId: phoneNumberIdDefault } = getCredentials();
   const phoneNumberId = phoneNumberIdOverride ?? phoneNumberIdDefault;
 
-  const urlResp = await fetch(
-    `https://api.kapso.ai/meta/whatsapp/v24.0/${mediaId}?phone_number_id=${phoneNumberId}`,
-    { headers: { 'X-API-Key': apiKey } }
-  );
+  const getUrlEndpoint = `https://api.kapso.ai/meta/whatsapp/v24.0/${mediaId}?phone_number_id=${phoneNumberId}`;
+  const urlResp = await fetch(getUrlEndpoint, { headers: { 'X-API-Key': apiKey } });
 
-  if (!urlResp.ok) throw new Error(`No se pudo obtener URL del media: ${mediaId}`);
+  if (!urlResp.ok) {
+    const errBody = await urlResp.text();
+    throw new Error(`No se pudo obtener URL del media ${mediaId} (${urlResp.status}): ${errBody}`);
+  }
 
   const { download_url } = (await urlResp.json()) as { download_url: string };
 
   // download_url es el proxy de Kapso con el token embebido: sin headers.
   const mediaResp = await fetch(download_url);
 
-  if (!mediaResp.ok) throw new Error(`No se pudo descargar el media: ${mediaId}`);
+  if (!mediaResp.ok) {
+    const errBody = await mediaResp.text();
+    throw new Error(`No se pudo descargar el media ${mediaId} (${mediaResp.status}): ${errBody}`);
+  }
 
   return Buffer.from(await mediaResp.arrayBuffer());
 }

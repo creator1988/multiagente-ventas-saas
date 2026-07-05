@@ -61,17 +61,31 @@ async function extraerTexto(item: KapsoV2Item): Promise<string> {
   }
 
   if (tipo === 'audio') {
+    console.log('[audio] tipo de mensaje recibido:', tipo);
+    console.log('[audio] Payload completo del mensaje:', JSON.stringify(item.message));
+
     const audioId = item.message?.audio?.id;
-    if (!audioId) return '';
+    const audioUrl = item.message?.audio?.url;
+    console.log('[audio] audio.id:', audioId, '| audio.url:', audioUrl);
+
+    if (!audioId) {
+      console.error('[audio] No hay audio.id en el payload, no se puede descargar');
+      return '';
+    }
     try {
+      console.log('[audio] Iniciando descarga con media_id:', audioId, 'phone_number_id:', item.phone_number_id);
       const buffer = await descargarMedia(audioId, item.phone_number_id);
+      console.log('[audio] Descarga exitosa, bytes:', buffer.length);
+
       const base64 = buffer.toString('base64');
       const mime = item.message?.audio?.mime_type ?? 'audio/ogg';
+      console.log('[audio] Enviando a Gemini... mime:', mime);
+
       const transcripcion = await transcribirAudio(base64, mime);
-      console.log(`[kapso-webhook] Audio transcrito: "${transcripcion.substring(0, 80)}"`);
+      console.log('[audio] Transcripción:', transcripcion);
       return transcripcion;
     } catch (e) {
-      console.error('[kapso-webhook] Error transcribiendo audio:', e);
+      console.error('[audio] Error transcribiendo audio:', e);
       return '';
     }
   }
