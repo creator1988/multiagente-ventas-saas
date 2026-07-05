@@ -224,13 +224,12 @@ export async function registrarPedido(
 
     for (const item of items) {
       await sql`
-        INSERT INTO pedido_items (pedido_id, producto_id, cantidad, precio_unitario, subtotal)
+        INSERT INTO pedido_items (pedido_id, producto_id, cantidad, precio_unitario)
         VALUES (
           ${pedido_id},
           ${item.producto_id},
           ${item.cantidad},
-          ${item.precio_unitario},
-          ${item.cantidad * item.precio_unitario}
+          ${item.precio_unitario}
         )
       `;
     }
