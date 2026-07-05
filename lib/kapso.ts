@@ -121,14 +121,6 @@ export async function enviarProductoConBoton(
   });
 }
 
-export async function descargarAudio(url: string): Promise<Buffer> {
-  // Kapso no usa Bearer/X-API-Key para descargar media: la URL del webhook
-  // (o el download_url del proxy) ya trae el token de autenticación embebido.
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`No se pudo descargar audio: ${resp.status}`);
-  return Buffer.from(await resp.arrayBuffer());
-}
-
 export async function enviarImagen(
   to: string,
   url: string,
@@ -146,8 +138,9 @@ export async function enviarImagen(
   });
 }
 
-export async function descargarMedia(mediaId: string): Promise<Buffer> {
-  const { apiKey, phoneNumberId } = getCredentials();
+export async function descargarMedia(mediaId: string, phoneNumberIdOverride?: string): Promise<Buffer> {
+  const { apiKey, phoneNumberId: phoneNumberIdDefault } = getCredentials();
+  const phoneNumberId = phoneNumberIdOverride ?? phoneNumberIdDefault;
 
   const urlResp = await fetch(
     `https://api.kapso.ai/meta/whatsapp/v24.0/${mediaId}?phone_number_id=${phoneNumberId}`,

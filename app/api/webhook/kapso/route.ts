@@ -12,7 +12,7 @@ import { clasificarIntencion } from '@/lib/intenciones';
 import { procesarConClaude, procesarNuevoCliente } from '@/lib/agent-core';
 import { fallbackGroq } from '@/lib/groq';
 import { sendMessage } from '@/lib/kapso/sendMessage';
-import { descargarAudio } from '@/lib/kapso';
+import { descargarMedia } from '@/lib/kapso';
 import { transcribirAudio } from '@/lib/gemini';
 import { notificarEscalado } from '@/lib/resend';
 import { sql } from '@/lib/db';
@@ -61,10 +61,10 @@ async function extraerTexto(item: KapsoV2Item): Promise<string> {
   }
 
   if (tipo === 'audio') {
-    const audioUrl = item.message?.audio?.url;
-    if (!audioUrl) return '';
+    const audioId = item.message?.audio?.id;
+    if (!audioId) return '';
     try {
-      const buffer = await descargarAudio(audioUrl);
+      const buffer = await descargarMedia(audioId, item.phone_number_id);
       const base64 = buffer.toString('base64');
       const mime = item.message?.audio?.mime_type ?? 'audio/ogg';
       const transcripcion = await transcribirAudio(base64, mime);
