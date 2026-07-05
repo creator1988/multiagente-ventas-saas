@@ -64,6 +64,12 @@ async function extraerTexto(item: KapsoV2Item): Promise<string> {
     console.log('[audio] tipo de mensaje recibido:', tipo);
     console.log('[audio] Payload completo del mensaje:', JSON.stringify(item.message));
 
+    const transcriptKapso = item.message?.kapso?.transcript?.text?.trim();
+    if (transcriptKapso) {
+      console.log('[audio] Transcripción de Kapso (sin Gemini):', transcriptKapso);
+      return transcriptKapso;
+    }
+
     const audioId = item.message?.audio?.id;
     const audioUrl = item.message?.audio?.url;
     console.log('[audio] audio.id:', audioId, '| audio.url:', audioUrl);

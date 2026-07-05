@@ -245,6 +245,9 @@ export interface KapsoV2Item {
       list_reply?: { id: string; title: string };
       button_reply?: { id: string; title: string };
     };
+    kapso?: {
+      transcript?: { text: string };
+    };
   };
   conversation: {
     id: string;
