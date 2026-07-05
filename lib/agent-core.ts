@@ -20,6 +20,8 @@ import { enviarTexto, enviarListMessage, enviarReplyButtons, enviarImagen, envia
 import { notificarPedidoNuevo } from './resend';
 import { sql } from './db';
 
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 interface ProcesarParams {
   empresa_id: string;
   whatsapp: string;
@@ -58,10 +60,15 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     return;
   }
 
-  // PRIORIDAD 2: estado "esperando_producto" — captura cualquier UUID que venga del list_reply
+  // PRIORIDAD 2: estado "esperando_producto" — captura solo si es un UUID real (list_reply)
   if (estado.etapa === 'esperando_producto') {
-    await seleccionarProducto(params, estado, textoUsuario);
-    return;
+    if (UUID_REGEX.test(textoUsuario)) {
+      await seleccionarProducto(params, estado, textoUsuario);
+      return;
+    }
+    // Texto libre en vez de selección de la lista: abandonamos la etapa y
+    // dejamos que el mensaje se enrute por intención normalmente.
+    await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'inicio' });
   }
 
   // PRIORIDAD 3: estado "esperando_cantidad" — botones rápidos (qty_N) o texto numérico
@@ -142,7 +149,8 @@ async function mostrarCategorias(
   const { data: categorias, error } = await obtenerCategorias(empresa_id);
 
   if (error || !categorias || categorias.length === 0) {
-    const msg = 'Por el momento no tenemos el catálogo disponible. Un asesor te atenderá pronto. 🙏';
+    if (error) console.error('[agent-core] mostrarCategorias error Query Card:', error);
+    const msg = 'Lo siento, hubo un error técnico.';
     await enviarTexto(whatsapp, msg);
     await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
     return;
