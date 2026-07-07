@@ -1,8 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
-import { getClient, CLAUDE_MODEL } from '@/lib/claude';
-import { ISA_SCORE_PROMPT } from '@/lib/agent-prompt';
-import type { ISAScoreResult } from '@/types';
+import { calcularIsaScore } from '@/lib/monitor';
 
 const EMPRESA_ID = process.env.EMPRESA_ID_DEFAULT ?? '';
 
@@ -56,49 +54,11 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    // Obtener todos los mensajes de la conversación
-    const mensajes = await sql`
-      SELECT rol, contenido, timestamp
-      FROM mensajes
-      WHERE conversacion_id = ${conversacion_id}
-      ORDER BY timestamp ASC
-    `;
+    const resultado = await calcularIsaScore(conversacion_id);
 
-    if (!mensajes.length) {
+    if (!resultado) {
       return NextResponse.json({ error: 'Conversación sin mensajes' }, { status: 404 });
     }
-
-    const transcripcion = mensajes
-      .map((m) => `[${m.rol}]: ${m.contenido}`)
-      .join('\n');
-
-    const response = await getClient().messages.create({
-      model: CLAUDE_MODEL,
-      max_tokens: 512,
-      system: ISA_SCORE_PROMPT,
-      messages: [
-        {
-          role: 'user',
-          content: `Evalúa esta conversación de ventas:\n\n${transcripcion}`,
-        },
-      ],
-    });
-
-    const bloque = response.content[0];
-    if (bloque.type !== 'text') {
-      throw new Error('Respuesta inesperada del modelo');
-    }
-
-    const resultado = JSON.parse(bloque.text) as ISAScoreResult;
-    resultado.conversacion_id = conversacion_id;
-
-    // Guardar score en la conversación
-    await sql`
-      UPDATE conversaciones
-      SET isa_score = ${resultado.score},
-          estado = 'completada'
-      WHERE id = ${conversacion_id}
-    `;
 
     return NextResponse.json({ data: resultado });
   } catch (error) {

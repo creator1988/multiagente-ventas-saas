@@ -20,6 +20,7 @@ import { buildSystemPrompt } from './agent-prompt';
 import { getCached, setCached } from './cache';
 import { enviarTexto, enviarListMessage, enviarReplyButtons, enviarProductoConBoton, enviarOfertaConBoton } from './kapso';
 import { notificarPedidoNuevo, notificarPedidoFallido } from './resend';
+import { calcularIsaScore } from './monitor';
 import { sql } from './db';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -1097,6 +1098,11 @@ async function registrarPedidoFinal(
 
   await actualizarUltimoPedido(cliente.id);
   await setEstadoFlujo(empresa_id, conversacion_id, { etapa: 'inicio', carrito: [] });
+
+  // Pedido confirmado = conversación resuelta: calcula el ISA Score y marca
+  // la conversación como 'completada'. No se espera (no bloquea la respuesta
+  // al cliente) — igual que las notificaciones por email de más abajo.
+  calcularIsaScore(conversacion_id).catch(e => console.error('[agent-core] calcularIsaScore error:', e));
 
   const idCorto = resultado.pedido_id.substring(0, 8).toUpperCase();
   const msg = esPrimeraVez

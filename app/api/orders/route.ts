@@ -32,7 +32,23 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     let rows;
 
     if (fecha) {
-      rows = await sql`SELECT * FROM v_pedidos_hoy WHERE empresa_id = ${empresa_id}`;
+      rows = await sql`
+        SELECT
+          p.id AS pedido_id,
+          COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre,
+          c.whatsapp AS whatsapp,
+          p.estado,
+          p.total,
+          p.creado_at AS created_at,
+          COUNT(pi.id) AS items_count
+        FROM pedidos p
+        JOIN clientes c ON c.id = p.cliente_id
+        LEFT JOIN pedido_items pi ON pi.pedido_id = p.id
+        WHERE p.empresa_id = ${empresa_id}
+          AND p.creado_at::date = CURRENT_DATE
+        GROUP BY p.id, c.nombre_negocio, c.nombre_contacto, c.whatsapp
+        ORDER BY p.creado_at DESC
+      `;
     } else if (cliente_id) {
       rows = await sql`
         SELECT p.*, COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre
