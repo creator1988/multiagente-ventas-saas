@@ -27,6 +27,9 @@ const PATRONES: Record<Intencion, RegExp[]> = {
   ],
   categoria_seleccionada: [], // detectado por ID 'cat_' antes del loop
   agregar_pedido: [],         // detectado por btn_agregar antes del loop
+  modificar_pedido: [],       // detectado por btn_modificar antes del loop
+  cambiar_cantidad: [],       // detectado por btn_cambiar_cantidad antes del loop
+  quitar_producto: [],        // detectado por btn_quitar_producto antes del loop
   confirmar_pedido: [
     /\b(confirmo|confirmar|confirmado|s[ií]\s*confirmo|de\s*acuerdo|dale|va\b|ok\b)\b/i,
     /\bterminar(\s+(el\s+)?pedido)?\b/i,
@@ -51,6 +54,7 @@ const PATRONES: Record<Intencion, RegExp[]> = {
 
 const SKIP_EN_LOOP: Intencion[] = [
   'audio', 'desconocido', 'categoria_seleccionada', 'agregar_pedido',
+  'modificar_pedido', 'cambiar_cantidad', 'quitar_producto',
 ];
 
 export function clasificarIntencion(texto: string): Intencion {
@@ -64,8 +68,10 @@ export function clasificarIntencion(texto: string): Intencion {
       texto === 'btn_confirmar_igual' ||
       texto === 'btn_confirmar_final')                 return 'confirmar_pedido';
   if (texto === 'btn_ofertas')                         return 'ver_ofertas';
-  if (texto === 'btn_ver_cat' ||
-      texto === 'btn_modificar')                       return 'catalogo';
+  if (texto === 'btn_ver_cat')                         return 'catalogo';
+  if (texto === 'btn_modificar')                       return 'modificar_pedido';
+  if (texto === 'btn_cambiar_cantidad')                return 'cambiar_cantidad';
+  if (texto === 'btn_quitar_producto')                 return 'quitar_producto';
 
   // Confirmar pedido tiene prioridad sobre "pedido" genérico: frases como
   // "quiero pagar" o "quiero terminar el pedido" contienen verbos (quiero)

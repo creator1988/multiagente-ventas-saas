@@ -344,6 +344,9 @@ export type Intencion =
   | 'categoria_seleccionada'
   | 'agregar_pedido'
   | 'confirmar_pedido'
+  | 'modificar_pedido'
+  | 'cambiar_cantidad'
+  | 'quitar_producto'
   | 'consulta_stock'
   | 'consulta_pedido'
   | 'audio'
@@ -368,7 +371,10 @@ export interface EstadoFlujo {
     | 'esperando_confirm_repetir'
     | 'esperando_nombre'
     | 'esperando_direccion'
-    | 'esperando_telefono_confirmacion';
+    | 'esperando_telefono_confirmacion'
+    | 'esperando_indice_cantidad'
+    | 'esperando_nueva_cantidad'
+    | 'esperando_indice_quitar';
   producto_contexto?: {
     tipo: 'producto' | 'oferta';
     id: string;
@@ -382,6 +388,7 @@ export interface EstadoFlujo {
   };
   carrito: CartItem[];
   last_categoria_id?: string;
+  modificar_indice?: number;
 }
 
 export interface PedidoItemConNombre extends PedidoItem {

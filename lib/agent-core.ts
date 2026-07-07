@@ -113,6 +113,20 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     return;
   }
 
+  // PRIORIDAD 3.6: submenú "Modificar" — elegir producto del carrito y aplicar la acción pendiente
+  if (estado.etapa === 'esperando_indice_cantidad') {
+    await seleccionarIndiceCantidad(params, estado, textoUsuario);
+    return;
+  }
+  if (estado.etapa === 'esperando_nueva_cantidad') {
+    await aplicarNuevaCantidad(params, estado, textoUsuario);
+    return;
+  }
+  if (estado.etapa === 'esperando_indice_quitar') {
+    await quitarDelCarrito(params, estado, textoUsuario);
+    return;
+  }
+
   // PRIORIDAD 3.5: recolección de datos de cliente nuevo/incompleto antes de confirmar
   if (estado.etapa === 'esperando_nombre') {
     await capturarNombreCliente(params, estado, textoUsuario);
@@ -200,6 +214,18 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
 
     case 'repetir_pedido':
       await repetirUltimoPedido(params, estado);
+      break;
+
+    case 'modificar_pedido':
+      await mostrarMenuModificar(params, estado);
+      break;
+
+    case 'cambiar_cantidad':
+      await iniciarCambiarCantidad(params, estado);
+      break;
+
+    case 'quitar_producto':
+      await iniciarQuitarProducto(params, estado);
       break;
 
     default:
@@ -572,13 +598,9 @@ async function manejarCantidad(
     : { tipo: 'producto', producto_id: p.id, nombre: p.nombre, cantidad, precio_unitario: p.precio };
 
   const nuevoCarrito = [...estado.carrito, nuevoItem];
-  const total = nuevoCarrito.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
+  const { texto, total } = resumenCarrito(nuevoCarrito);
 
-  const resumenLines = nuevoCarrito
-    .map(i => `• ${i.nombre} x${i.cantidad} = $${(i.cantidad * i.precio_unitario).toLocaleString('es-CO')}`)
-    .join('\n');
-
-  const msg = `✅ Agregado. Carrito actual:\n\n${resumenLines}\n\n*Total: $${total.toLocaleString('es-CO')}*`;
+  const msg = `✅ Agregado. Carrito actual:\n\n${texto}\n\n*Total: $${total.toLocaleString('es-CO')}*`;
 
   await enviarReplyButtons(whatsapp, msg, [
     { id: 'btn_agregar_mas', title: 'Agregar más' },
@@ -592,6 +614,252 @@ async function manejarCantidad(
     etapa: 'esperando_confirmacion',
     carrito: nuevoCarrito,
     producto_contexto: undefined,
+  });
+}
+
+// ============================================================
+// PRIVADO: resumenCarrito — texto formateado + total, reutilizado por el
+// menú de modificar y por las confirmaciones de cambiar/quitar
+// ============================================================
+function resumenCarrito(carrito: CartItem[]): { texto: string; total: number } {
+  const total = carrito.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
+  const texto = carrito
+    .map(i => `• ${i.nombre} x${i.cantidad} = $${(i.cantidad * i.precio_unitario).toLocaleString('es-CO')}`)
+    .join('\n');
+  return { texto, total };
+}
+
+// ============================================================
+// PRIVADO: mostrarMenuModificar — punto de entrada al presionar "Modificar"
+// en el resumen de confirmación. Nunca vacía el carrito; el estado vuelve
+// a 'inicio' para que el flujo normal (agregar/confirmar) siga funcionando.
+// ============================================================
+async function mostrarMenuModificar(
+  params: ProcesarParams,
+  estado: EstadoFlujo
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id, cliente } = params;
+
+  if (estado.carrito.length === 0) {
+    const msg = 'Tu carrito está vacío. ¿Qué deseas pedir?';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'inicio' });
+    await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
+    return;
+  }
+
+  const { texto, total } = resumenCarrito(estado.carrito);
+  const msg = `Tu pedido actual:\n\n${texto}\n\n*Total: $${total.toLocaleString('es-CO')}*`;
+
+  await enviarReplyButtons(whatsapp, msg, [
+    { id: 'btn_agregar_mas',      title: 'Agregar más' },
+    { id: 'btn_cambiar_cantidad', title: 'Cambiar cantidad' },
+    { id: 'btn_quitar_producto',  title: 'Quitar un producto' },
+  ]);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+
+  // Vuelve a 'inicio' con el carrito intacto: al agregar más o confirmar de
+  // nuevo, el flujo recalcula todo desde el carrito actual, no desde cero.
+  await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'inicio' });
+}
+
+// ============================================================
+// PRIVADO: iniciarCambiarCantidad — muestra el carrito como lista para elegir
+// cuál producto cambiar de cantidad
+// ============================================================
+async function iniciarCambiarCantidad(
+  params: ProcesarParams,
+  estado: EstadoFlujo
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+
+  if (estado.carrito.length === 0) {
+    const msg = 'Tu carrito está vacío. ¿Qué deseas pedir?';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  const rows = estado.carrito
+    .map((item, i) => ({
+      id: `cartidx_${i}`,
+      title: item.nombre.substring(0, 24),
+      description: `x${item.cantidad} = $${(item.cantidad * item.precio_unitario).toLocaleString('es-CO')}`,
+    }))
+    .slice(0, 10);
+
+  await enviarListMessage(
+    whatsapp,
+    '¿Cuál producto quieres cambiar de cantidad?',
+    'Seleccionar',
+    [{ title: 'Tu pedido', rows }]
+  );
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: 'Lista de carrito para cambiar cantidad' });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'esperando_indice_cantidad' });
+}
+
+// ============================================================
+// PRIVADO: seleccionarIndiceCantidad — etapa "esperando_indice_cantidad"
+// ============================================================
+async function seleccionarIndiceCantidad(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  textoUsuario: string
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+
+  const match = textoUsuario.match(/^cartidx_(\d+)$/);
+  const indice = match ? parseInt(match[1], 10) : NaN;
+
+  if (isNaN(indice) || !estado.carrito[indice]) {
+    const msg = 'No reconocí ese producto. Por favor selecciónalo de la lista.';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  const item = estado.carrito[indice];
+  const msg = `¿Cuántas unidades de *${item.nombre}* deseas ahora? (actual: ${item.cantidad})`;
+  await enviarTexto(whatsapp, msg);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, {
+    ...estado,
+    etapa: 'esperando_nueva_cantidad',
+    modificar_indice: indice,
+  });
+}
+
+// ============================================================
+// PRIVADO: aplicarNuevaCantidad — etapa "esperando_nueva_cantidad"
+// ============================================================
+async function aplicarNuevaCantidad(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  textoUsuario: string
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+  const indice = estado.modificar_indice;
+
+  const cantidad = parseInt(textoUsuario.trim(), 10);
+
+  if (indice === undefined || !estado.carrito[indice]) {
+    await mostrarMenuModificar(params, estado);
+    return;
+  }
+
+  if (isNaN(cantidad) || cantidad <= 0) {
+    const msg = 'Por favor escribe un número válido de unidades.';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  const nuevoCarrito = estado.carrito.map((item, i) =>
+    i === indice ? { ...item, cantidad } : item
+  );
+  const { texto, total } = resumenCarrito(nuevoCarrito);
+  const msg = `✅ Actualizado. Tu pedido:\n\n${texto}\n\n*Total: $${total.toLocaleString('es-CO')}*`;
+
+  await enviarReplyButtons(whatsapp, msg, [
+    { id: 'btn_agregar_mas', title: 'Agregar más' },
+    { id: 'btn_confirmar',   title: 'Confirmar pedido' },
+    { id: 'btn_cancelar',    title: 'Cancelar' },
+  ]);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, {
+    ...estado,
+    etapa: 'inicio',
+    carrito: nuevoCarrito,
+    modificar_indice: undefined,
+  });
+}
+
+// ============================================================
+// PRIVADO: iniciarQuitarProducto — muestra el carrito como lista para elegir
+// cuál producto quitar
+// ============================================================
+async function iniciarQuitarProducto(
+  params: ProcesarParams,
+  estado: EstadoFlujo
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+
+  if (estado.carrito.length === 0) {
+    const msg = 'Tu carrito está vacío. ¿Qué deseas pedir?';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  const rows = estado.carrito
+    .map((item, i) => ({
+      id: `cartidx_${i}`,
+      title: item.nombre.substring(0, 24),
+      description: `x${item.cantidad} = $${(item.cantidad * item.precio_unitario).toLocaleString('es-CO')}`,
+    }))
+    .slice(0, 10);
+
+  await enviarListMessage(
+    whatsapp,
+    '¿Cuál producto quieres quitar del pedido?',
+    'Seleccionar',
+    [{ title: 'Tu pedido', rows }]
+  );
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: 'Lista de carrito para quitar producto' });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'esperando_indice_quitar' });
+}
+
+// ============================================================
+// PRIVADO: quitarDelCarrito — etapa "esperando_indice_quitar"
+// ============================================================
+async function quitarDelCarrito(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  textoUsuario: string
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id, cliente } = params;
+
+  const match = textoUsuario.match(/^cartidx_(\d+)$/);
+  const indice = match ? parseInt(match[1], 10) : NaN;
+
+  if (isNaN(indice) || !estado.carrito[indice]) {
+    const msg = 'No reconocí ese producto. Por favor selecciónalo de la lista.';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  const eliminado = estado.carrito[indice];
+  const nuevoCarrito = estado.carrito.filter((_, i) => i !== indice);
+
+  if (nuevoCarrito.length === 0) {
+    const msg = `Quitado *${eliminado.nombre}*. Tu carrito quedó vacío. ¿Qué deseas pedir?`;
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'inicio', carrito: [] });
+    await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
+    return;
+  }
+
+  const { texto, total } = resumenCarrito(nuevoCarrito);
+  const msg = `✅ Quitado *${eliminado.nombre}*. Tu pedido:\n\n${texto}\n\n*Total: $${total.toLocaleString('es-CO')}*`;
+
+  await enviarReplyButtons(whatsapp, msg, [
+    { id: 'btn_agregar_mas', title: 'Agregar más' },
+    { id: 'btn_confirmar',   title: 'Confirmar pedido' },
+    { id: 'btn_cancelar',    title: 'Cancelar' },
+  ]);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, {
+    ...estado,
+    etapa: 'inicio',
+    carrito: nuevoCarrito,
   });
 }
 
