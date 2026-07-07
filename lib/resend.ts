@@ -65,3 +65,42 @@ export async function notificarPedidoNuevo(params: {
     `,
   });
 }
+
+export async function notificarPedidoFallido(params: {
+  asesor_email: string;
+  cliente_nombre: string;
+  whatsapp: string;
+  error: string;
+  items: Array<{ nombre: string; cantidad: number; precio_unitario: number }>;
+}): Promise<void> {
+  const total = params.items.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
+  const itemsHtml = params.items
+    .map(
+      (i) =>
+        `<tr>
+          <td>${i.nombre}</td>
+          <td>${i.cantidad}</td>
+          <td>$${i.precio_unitario.toLocaleString('es-CO')}</td>
+          <td>$${(i.cantidad * i.precio_unitario).toLocaleString('es-CO')}</td>
+        </tr>`
+    )
+    .join('');
+
+  await getClient().emails.send({
+    from: FROM_EMAIL,
+    to: params.asesor_email,
+    subject: `[Distrisanty] ⚠️ Pedido FALLIDO — ${params.cliente_nombre}`,
+    html: `
+      <h2>Pedido no se pudo registrar</h2>
+      <p><strong>Cliente:</strong> ${params.cliente_nombre}</p>
+      <p><strong>WhatsApp:</strong> ${params.whatsapp}</p>
+      <p><strong>Error:</strong> ${params.error}</p>
+      <table border="1" cellpadding="6">
+        <thead><tr><th>Producto</th><th>Cant.</th><th>Precio unit.</th><th>Subtotal</th></tr></thead>
+        <tbody>${itemsHtml}</tbody>
+      </table>
+      <p><strong>Total: $${total.toLocaleString('es-CO')}</strong></p>
+      <p>Este pedido NO quedó registrado en el sistema. Contacta al cliente manualmente para confirmarlo.</p>
+    `,
+  });
+}

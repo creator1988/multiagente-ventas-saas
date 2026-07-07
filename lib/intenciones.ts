@@ -56,6 +56,7 @@ const SKIP_EN_LOOP: Intencion[] = [
 export function clasificarIntencion(texto: string): Intencion {
   // IDs de botones/listas — tienen prioridad absoluta sobre regex
   if (texto.startsWith('cat_'))                        return 'categoria_seleccionada';
+  if (texto.startsWith('addoferta_'))                  return 'agregar_pedido';
   if (texto.startsWith('add_'))                        return 'agregar_pedido';
   if (texto === 'btn_agregar' ||
       texto === 'btn_agregar_mas')                     return 'agregar_pedido';

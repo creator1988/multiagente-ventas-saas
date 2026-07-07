@@ -87,17 +87,18 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const { empresa_id = EMPRESA_ID, cliente_id, conversacion_id, items, notas } = parsed.data;
 
   try {
-    const result = await registrarPedido(empresa_id, cliente_id, conversacion_id, items, notas);
+    // Obtener datos del cliente (incluye ruta_id, puede ser NULL si no tiene ruta asignada)
+    const clienteRows = await sql`
+      SELECT nombre_negocio, nombre_contacto, ruta_id FROM clientes WHERE id = ${cliente_id} LIMIT 1
+    `;
+    const cliente = clienteRows[0] as { nombre_negocio: string | null; nombre_contacto: string | null; ruta_id: string | null } | undefined;
+
+    const itemsConTipo = items.map((i) => ({ ...i, tipo: 'producto' as const }));
+    const result = await registrarPedido(empresa_id, cliente_id, conversacion_id, itemsConTipo, notas, cliente?.ruta_id ?? null);
 
     if (result.error) {
       return NextResponse.json({ error: result.error }, { status: 500 });
     }
-
-    // Obtener datos del cliente para notificación
-    const clienteRows = await sql`
-      SELECT nombre_negocio, nombre_contacto FROM clientes WHERE id = ${cliente_id} LIMIT 1
-    `;
-    const cliente = clienteRows[0] as { nombre_negocio: string | null; nombre_contacto: string | null } | undefined;
 
     // Obtener nombres de productos para el email
     const productosRows = await sql`

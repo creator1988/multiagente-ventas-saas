@@ -87,9 +87,9 @@ export interface Pedido {
 export interface PedidoItem {
   id: string;
   pedido_id: string;
-  producto_id: string;
+  producto_id?: string;
   oferta_id?: string;
-  tipo?: string;
+  tipo: 'producto' | 'oferta';
   nombre_snapshot: string;
   cantidad: number;
   precio_unitario: number;
@@ -350,7 +350,9 @@ export type Intencion =
   | 'desconocido';
 
 export interface CartItem {
-  producto_id: string;
+  tipo: 'producto' | 'oferta';
+  producto_id?: string;
+  oferta_id?: string;
   nombre: string;
   cantidad: number;
   precio_unitario: number;
@@ -368,6 +370,7 @@ export interface EstadoFlujo {
     | 'esperando_direccion'
     | 'esperando_telefono_confirmacion';
   producto_contexto?: {
+    tipo: 'producto' | 'oferta';
     id: string;
     nombre: string;
     precio: number;

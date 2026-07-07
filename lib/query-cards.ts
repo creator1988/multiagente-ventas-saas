@@ -170,9 +170,8 @@ export async function ultimoPedido(
 
     const pedido = pedidos[0] as Pedido;
     const items = await sql`
-      SELECT pi.*, p.nombre AS producto_nombre
+      SELECT pi.*, pi.nombre_snapshot AS producto_nombre
       FROM pedido_items pi
-      JOIN productos p ON p.id = pi.producto_id
       WHERE pi.pedido_id = ${pedido.id}
     `;
 
@@ -190,7 +189,9 @@ export async function ultimoPedido(
 // REGISTRAR_PEDIDO
 // ============================================================
 export interface ItemPedido {
-  producto_id: string;
+  tipo: 'producto' | 'oferta';
+  producto_id?: string;
+  oferta_id?: string;
   nombre: string;
   cantidad: number;
   precio_unitario: number;
@@ -201,7 +202,8 @@ export async function registrarPedido(
   cliente_id: string,
   conversacion_id: string,
   items: ItemPedido[],
-  notas?: string
+  notas?: string,
+  ruta_id?: string | null
 ): Promise<QueryCardResult<{ pedido_id: string; total: number }>> {
   try {
     const total = items.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
@@ -212,8 +214,8 @@ export async function registrarPedido(
     console.log('[registrar-pedido] total:', total);
 
     const pedidoRows = await sql`
-      INSERT INTO pedidos (empresa_id, cliente_id, estado, canal, total, notas)
-      VALUES (${empresa_id}, ${cliente_id}, 'nuevo', 'whatsapp', ${total}, ${notas ?? null})
+      INSERT INTO pedidos (empresa_id, cliente_id, ruta_id, estado, canal, total, notas)
+      VALUES (${empresa_id}, ${cliente_id}, ${ruta_id ?? null}, 'nuevo', 'whatsapp', ${total}, ${notas ?? null})
       RETURNING id
     `;
 
@@ -225,10 +227,12 @@ export async function registrarPedido(
 
     for (const item of items) {
       await sql`
-        INSERT INTO pedido_items (pedido_id, producto_id, cantidad, precio_unitario, nombre_snapshot)
+        INSERT INTO pedido_items (pedido_id, producto_id, oferta_id, tipo, cantidad, precio_unitario, nombre_snapshot)
         VALUES (
           ${pedido_id},
-          ${item.producto_id},
+          ${item.producto_id ?? null},
+          ${item.oferta_id ?? null},
+          ${item.tipo},
           ${item.cantidad},
           ${item.precio_unitario},
           ${item.nombre}
@@ -236,14 +240,28 @@ export async function registrarPedido(
       `;
     }
 
-    // Descontar stock
+    // Descontar stock: directo para productos, vía componentes para ofertas (combos)
     for (const item of items) {
-      await sql`
-        UPDATE productos
-        SET stock_disponible = stock_disponible - ${item.cantidad}
-        WHERE id = ${item.producto_id}
-          AND empresa_id = ${empresa_id}
-      `;
+      if (item.tipo === 'oferta' && item.oferta_id) {
+        const componentes = await sql`
+          SELECT producto_id, cantidad FROM oferta_productos WHERE oferta_id = ${item.oferta_id}
+        `;
+        for (const c of componentes) {
+          await sql`
+            UPDATE productos
+            SET stock_disponible = stock_disponible - ${(c.cantidad as number) * item.cantidad}
+            WHERE id = ${c.producto_id}
+              AND empresa_id = ${empresa_id}
+          `;
+        }
+      } else if (item.producto_id) {
+        await sql`
+          UPDATE productos
+          SET stock_disponible = stock_disponible - ${item.cantidad}
+          WHERE id = ${item.producto_id}
+            AND empresa_id = ${empresa_id}
+        `;
+      }
     }
 
     return { data: { pedido_id, total }, error: null, cached: false };
@@ -363,6 +381,57 @@ export async function ofertasParaMostrar(
       LIMIT 20
     `;
     return { data: rows as Oferta[], error: null, cached: false };
+  } catch (e) {
+    return { data: null, error: String(e), cached: false };
+  }
+}
+
+// ============================================================
+// OBTENER OFERTA CON COMPONENTES (para agregarla al carrito)
+// ============================================================
+export interface ComponenteOferta {
+  producto_id: string;
+  cantidad: number;
+  stock_disponible: number;
+}
+
+export async function obtenerOferta(
+  empresa_id: string,
+  oferta_id: string
+): Promise<QueryCardResult<{ id: string; nombre: string; precio_combo: number; componentes: ComponenteOferta[] }>> {
+  try {
+    const ofertaRows = await sql`
+      SELECT id, nombre, precio_combo
+      FROM ofertas
+      WHERE id = ${oferta_id}
+        AND empresa_id = ${empresa_id}
+        AND activo = true
+      LIMIT 1
+    `;
+
+    if (!ofertaRows.length) return { data: null, error: 'Oferta no encontrada', cached: false };
+
+    const componentes = await sql`
+      SELECT op.producto_id, op.cantidad, p.stock_disponible
+      FROM oferta_productos op
+      JOIN productos p ON p.id = op.producto_id
+      WHERE op.oferta_id = ${oferta_id}
+    `;
+
+    return {
+      data: {
+        id: ofertaRows[0].id as string,
+        nombre: ofertaRows[0].nombre as string,
+        precio_combo: Number(ofertaRows[0].precio_combo),
+        componentes: componentes.map(c => ({
+          producto_id: c.producto_id as string,
+          cantidad: c.cantidad as number,
+          stock_disponible: c.stock_disponible as number,
+        })),
+      },
+      error: null,
+      cached: false,
+    };
   } catch (e) {
     return { data: null, error: String(e), cached: false };
   }

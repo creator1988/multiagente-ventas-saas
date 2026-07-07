@@ -4,6 +4,7 @@ import {
   obtenerCategorias,
   productosPorCategoria,
   ofertasParaMostrar,
+  obtenerOferta,
   consultarStock,
   historialCliente,
   ultimoPedido,
@@ -17,8 +18,8 @@ import {
 import { completarConClaude } from './claude';
 import { buildSystemPrompt } from './agent-prompt';
 import { getCached, setCached } from './cache';
-import { enviarTexto, enviarListMessage, enviarReplyButtons, enviarImagen, enviarProductoConBoton } from './kapso';
-import { notificarPedidoNuevo } from './resend';
+import { enviarTexto, enviarListMessage, enviarReplyButtons, enviarProductoConBoton, enviarOfertaConBoton } from './kapso';
+import { notificarPedidoNuevo, notificarPedidoFallido } from './resend';
 import { sql } from './db';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -148,7 +149,7 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
   // PRIORIDAD 4.5: detección temprana en texto libre (categoría, ofertas o producto por
   // nombre) — corre ANTES del switch por intención porque el clasificador de regex no
   // reconoce nombres reales de categorías/productos ni frases sueltas de audio transcrito.
-  const esIdEstructurado = /^(cat_|add_|btn_|qty_)/.test(textoUsuario);
+  const esIdEstructurado = /^(cat_|add_|addoferta_|btn_|qty_)/.test(textoUsuario);
   if (!esIdEstructurado) {
     const categoriaDetectada = await detectarCategoriaPorTexto(empresa_id, textoUsuario);
     if (categoriaDetectada) {
@@ -309,20 +310,14 @@ async function mostrarOfertas(
   }
 
   for (const o of ofertas) {
-    const precioStr = o.precio_combo ? `\n💰 Precio combo: $${o.precio_combo.toLocaleString('es-CO')}` : '';
-    const caption = `*${o.nombre}*${o.descripcion ? `\n${o.descripcion}` : ''}${precioStr}`;
-    if (o.url_imagen) {
-      await enviarImagen(whatsapp, o.url_imagen, caption);
-    } else {
-      await enviarTexto(whatsapp, caption);
-    }
+    await enviarOfertaConBoton(whatsapp, o);
   }
 
-  await enviarReplyButtons(whatsapp, '¿Qué deseas hacer?', [
-    { id: 'btn_agregar', title: 'Agregar al pedido' },
-    { id: 'btn_ver_cat', title: 'Ver categorías' },
+  await enviarReplyButtons(whatsapp, '¿Qué más deseas hacer?', [
+    { id: 'btn_ver_cat',   title: 'Ver categorías' },
+    { id: 'btn_confirmar', title: 'Confirmar pedido' },
   ]);
-  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: 'Ofertas mostradas' });
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: `Ofertas mostradas (${ofertas.length})` });
 }
 
 // ============================================================
@@ -338,6 +333,13 @@ async function iniciarAgregarAlPedido(
   if (textoUsuario.startsWith('add_')) {
     const productoId = textoUsuario.replace(/^add_/, '');
     await seleccionarProducto(params, estado, productoId);
+    return;
+  }
+
+  // Botón "Agregar" pegado a una oferta/combo específico: addoferta_{uuid}
+  if (textoUsuario.startsWith('addoferta_')) {
+    const ofertaId = textoUsuario.replace(/^addoferta_/, '');
+    await seleccionarOferta(params, estado, ofertaId);
     return;
   }
 
@@ -426,6 +428,7 @@ async function presentarProductoParaCantidad(
     ...estado,
     etapa: 'esperando_cantidad',
     producto_contexto: {
+      tipo: 'producto',
       id: p.id,
       nombre: p.nombre,
       precio: p.precio_lista,
@@ -483,10 +486,65 @@ async function seleccionarProducto(
     ...estado,
     etapa: 'esperando_cantidad',
     producto_contexto: {
+      tipo: 'producto',
       id: p.id,
       nombre: p.nombre,
       precio: p.precio_lista,
       stock: p.stock_disponible,
+    },
+  });
+}
+
+// ============================================================
+// PRIVADO: seleccionarOferta — cuando el cliente pulsa "Agregar" en una oferta/combo
+// ============================================================
+async function seleccionarOferta(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  ofertaId: string
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id, cliente } = params;
+
+  const { data: oferta, error } = await obtenerOferta(empresa_id, ofertaId);
+
+  if (error || !oferta) {
+    const msg = 'No pude identificar esa oferta. Te muestro las disponibles:';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    await mostrarOfertas(params);
+    return;
+  }
+
+  const stockCombos = oferta.componentes.length > 0
+    ? Math.min(...oferta.componentes.map(c => Math.floor(c.stock_disponible / c.cantidad)))
+    : 0;
+
+  if (stockCombos <= 0) {
+    const msg = `Lo siento, *${oferta.nombre}* está agotada en este momento.`;
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
+    return;
+  }
+
+  const precio = oferta.precio_combo.toLocaleString('es-CO');
+  const msg = `¿Cuántas unidades de *${oferta.nombre}*?\n💰 $${precio} c/u`;
+  await enviarReplyButtons(whatsapp, msg, [
+    { id: 'qty_1', title: '1 unidad' },
+    { id: 'qty_2', title: '2 unidades' },
+    { id: 'qty_3', title: '3 unidades' },
+  ]);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, {
+    ...estado,
+    etapa: 'esperando_cantidad',
+    producto_contexto: {
+      tipo: 'oferta',
+      id: oferta.id,
+      nombre: oferta.nombre,
+      precio: oferta.precio_combo,
+      stock: stockCombos,
     },
   });
 }
@@ -509,12 +567,9 @@ async function manejarCantidad(
     return;
   }
 
-  const nuevoItem: CartItem = {
-    producto_id: p.id,
-    nombre: p.nombre,
-    cantidad,
-    precio_unitario: p.precio,
-  };
+  const nuevoItem: CartItem = p.tipo === 'oferta'
+    ? { tipo: 'oferta', oferta_id: p.id, nombre: p.nombre, cantidad, precio_unitario: p.precio }
+    : { tipo: 'producto', producto_id: p.id, nombre: p.nombre, cantidad, precio_unitario: p.precio };
 
   const nuevoCarrito = [...estado.carrito, nuevoItem];
   const total = nuevoCarrito.reduce((acc, i) => acc + i.cantidad * i.precio_unitario, 0);
@@ -731,7 +786,9 @@ async function registrarPedidoFinal(
   }
 
   const items: ItemPedido[] = estado.carrito.map(i => ({
+    tipo: i.tipo,
     producto_id: i.producto_id,
+    oferta_id: i.oferta_id,
     nombre: i.nombre,
     cantidad: i.cantidad,
     precio_unitario: i.precio_unitario,
@@ -741,7 +798,9 @@ async function registrarPedidoFinal(
     empresa_id,
     cliente.id,
     conversacion_id,
-    items
+    items,
+    undefined,
+    cliente.ruta_id ?? null
   );
 
   if (error || !resultado) {
@@ -749,6 +808,22 @@ async function registrarPedidoFinal(
     await enviarTexto(whatsapp, msg);
     await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
     console.error('[agent-core] registrarPedidoFinal error:', error);
+
+    if (process.env.ASESOR_EMAIL) {
+      const clienteNombre = cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp;
+      await notificarPedidoFallido({
+        asesor_email: process.env.ASESOR_EMAIL,
+        cliente_nombre: clienteNombre,
+        whatsapp,
+        error: error ?? 'Error desconocido',
+        items: estado.carrito.map(i => ({
+          nombre: i.nombre,
+          cantidad: i.cantidad,
+          precio_unitario: i.precio_unitario,
+        })),
+      }).catch(e => console.error('[agent-core] notificarPedidoFallido error:', e));
+    }
+
     return;
   }
 
@@ -804,8 +879,10 @@ async function repetirUltimoPedido(
   }
 
   const carritoRepetir: CartItem[] = (data.items as PedidoItemConNombre[]).map(i => ({
+    tipo: i.tipo,
     producto_id: i.producto_id,
-    nombre: i.producto_nombre ?? 'Producto',
+    oferta_id: i.oferta_id,
+    nombre: i.producto_nombre ?? i.nombre_snapshot ?? 'Producto',
     cantidad: i.cantidad,
     precio_unitario: i.precio_unitario,
   }));

@@ -121,6 +121,39 @@ export async function enviarProductoConBoton(
   });
 }
 
+export async function enviarOfertaConBoton(
+  to: string,
+  oferta: {
+    id: string;
+    nombre: string;
+    descripcion?: string | null;
+    precio_combo?: number | null;
+    url_imagen?: string | null;
+  }
+): Promise<void> {
+  const precioStr = oferta.precio_combo ? `\n💰 $${oferta.precio_combo.toLocaleString('es-CO')}` : '';
+  const bodyText = `*${oferta.nombre}*${oferta.descripcion ? `\n${oferta.descripcion}` : ''}${precioStr}`;
+  const boton = { type: 'reply', reply: { id: `addoferta_${oferta.id}`, title: 'Agregar' } };
+
+  const interactive: Record<string, unknown> = {
+    type: 'button',
+    body: { text: bodyText.substring(0, 1024) },
+    action: { buttons: [boton] },
+  };
+
+  if (oferta.url_imagen) {
+    interactive.header = { type: 'image', image: { link: oferta.url_imagen } };
+  }
+
+  await kapsoRequest({
+    messaging_product: 'whatsapp',
+    recipient_type: 'individual',
+    to,
+    type: 'interactive',
+    interactive,
+  });
+}
+
 export async function enviarImagen(
   to: string,
   url: string,
