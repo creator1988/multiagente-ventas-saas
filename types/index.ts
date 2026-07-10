@@ -331,6 +331,27 @@ export interface ResultadoUndo {
 }
 
 // ============================================================
+// IMPORTACIÓN DE CLIENTES (Excel)
+// ============================================================
+export interface ClienteImportRow {
+  fila_numero: number;
+  nombre_original: string;
+  nombre_limpio: string;
+  ruta_codigo: string;
+  telefono_original: string;
+  whatsapp: string | null;
+  valido: boolean;
+  motivo_invalido?: string;
+}
+
+export interface ResultadoImportClientes {
+  nuevos: number;
+  actualizados: number;
+  invalidos: number;
+  errores: string[];
+}
+
+// ============================================================
 // AGENTE
 // ============================================================
 

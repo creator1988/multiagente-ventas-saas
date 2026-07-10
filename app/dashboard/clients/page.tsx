@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 
 interface ClienteConHistorial {
   id: string;
@@ -34,7 +35,15 @@ export default function ClientsPage() {
 
   return (
     <div className="p-6 max-w-6xl mx-auto">
-      <h1 className="text-2xl font-bold text-gray-900 mb-6">Clientes</h1>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="text-2xl font-bold text-gray-900">Clientes</h1>
+        <Link
+          href="/dashboard/clients/import"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+        >
+          Importar Excel
+        </Link>
+      </div>
 
       <input
         type="search"

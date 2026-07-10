@@ -10,7 +10,7 @@ export function quitarPrefijo(texto: string): string {
     .trim();
 }
 
-function toTitulo(texto: string): string {
+export function toTitulo(texto: string): string {
   return texto
     .toLowerCase()
     .replace(/\b\w/g, (c) => c.toUpperCase()) // title case
