@@ -144,6 +144,24 @@ export interface VPedidoHoy {
   created_at: Date;
 }
 
+export interface PedidoDetalleItem {
+  nombre_snapshot: string;
+  cantidad: number;
+  precio_unitario: number;
+  subtotal: number;
+}
+
+export interface PedidoDetalle {
+  pedido_id: string;
+  numero_pedido: string | null;
+  cliente_nombre: string;
+  whatsapp: string;
+  estado: string;
+  total: number;
+  created_at: Date;
+  items: PedidoDetalleItem[];
+}
+
 export interface VClienteInactivo {
   cliente_id: string;
   nombre: string;

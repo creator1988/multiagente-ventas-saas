@@ -24,11 +24,45 @@ const PedidoSchema = z.object({
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const empresa_id = searchParams.get('empresa_id') ?? EMPRESA_ID;
+  const pedido_id = searchParams.get('id');
   const estado = searchParams.get('estado');
   const cliente_id = searchParams.get('cliente_id');
   const fecha = searchParams.get('fecha'); // YYYY-MM-DD
 
   try {
+    // Detalle de un pedido puntual: cabecera + items (JOIN pedidos + clientes,
+    // pedido_items aparte porque es una relación 1-a-muchos)
+    if (pedido_id) {
+      const cabeceraRows = await sql`
+        SELECT
+          p.id AS pedido_id,
+          p.numero_pedido,
+          COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre,
+          c.whatsapp AS whatsapp,
+          p.estado,
+          p.total,
+          p.creado_at AS created_at
+        FROM pedidos p
+        JOIN clientes c ON c.id = p.cliente_id
+        WHERE p.id = ${pedido_id}
+          AND p.empresa_id = ${empresa_id}
+        LIMIT 1
+      `;
+
+      if (!cabeceraRows.length) {
+        return NextResponse.json({ error: 'Pedido no encontrado' }, { status: 404 });
+      }
+
+      const itemsRows = await sql`
+        SELECT nombre_snapshot, cantidad, precio_unitario, subtotal
+        FROM pedido_items
+        WHERE pedido_id = ${pedido_id}
+        ORDER BY id ASC
+      `;
+
+      return NextResponse.json({ data: { ...cabeceraRows[0], items: itemsRows } });
+    }
+
     let rows;
 
     if (fecha) {
