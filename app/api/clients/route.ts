@@ -30,6 +30,9 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         SELECT * FROM v_clientes_inactivos WHERE empresa_id = ${empresa_id}
       `;
     } else {
+      // Sin filtro de activo a propósito: la gestión de clientes del dashboard
+      // necesita ver también los inactivos (opt-out de no-contacto) para
+      // poder reactivarlos o editarlos, distinguidos visualmente en la UI.
       rows = await sql`
         SELECT c.*,
                COALESCE(c.nombre_negocio, c.nombre_contacto) AS nombre,
@@ -38,7 +41,6 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         FROM clientes c
         LEFT JOIN pedidos p ON p.cliente_id = c.id
         WHERE c.empresa_id = ${empresa_id}
-          AND c.activo = true
         GROUP BY c.id
         ORDER BY COALESCE(c.nombre_negocio, c.nombre_contacto)
       `;
@@ -48,5 +50,104 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   } catch (error) {
     console.error('[clients GET]', error);
     return NextResponse.json({ error: 'Error consultando clientes' }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// PATCH /api/clients?id=xxx — editar un cliente (solo actualiza campos enviados)
+// ---------------------------------------------------------------------------
+export async function PATCH(request: NextRequest): Promise<NextResponse> {
+  const { searchParams } = new URL(request.url);
+  const cliente_id = searchParams.get('id');
+
+  if (!cliente_id) {
+    return NextResponse.json({ error: 'id requerido' }, { status: 400 });
+  }
+
+  const body = (await request.json()) as {
+    empresa_id?: string;
+    nombre_negocio?: string;
+    telefono?: string;
+    whatsapp?: string;
+    direccion?: string;
+    barrio?: string;
+    tipo_negocio?: string;
+    activo?: boolean;
+  };
+
+  const empresa_id = body.empresa_id ?? EMPRESA_ID;
+
+  try {
+    if (body.nombre_negocio !== undefined) {
+      await sql`UPDATE clientes SET nombre_negocio = ${body.nombre_negocio} WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+    }
+    if (body.telefono !== undefined) {
+      await sql`UPDATE clientes SET telefono = ${body.telefono} WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+    }
+    if (body.whatsapp !== undefined) {
+      await sql`UPDATE clientes SET whatsapp = ${body.whatsapp} WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+    }
+    if (body.direccion !== undefined) {
+      await sql`UPDATE clientes SET direccion = ${body.direccion} WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+    }
+    if (body.barrio !== undefined) {
+      await sql`UPDATE clientes SET barrio = ${body.barrio} WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+    }
+    if (body.tipo_negocio !== undefined) {
+      await sql`UPDATE clientes SET tipo_negocio = ${body.tipo_negocio} WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+    }
+    if (body.activo !== undefined) {
+      await sql`UPDATE clientes SET activo = ${body.activo} WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('[clients PATCH]', error);
+    return NextResponse.json({ error: 'Error actualizando cliente', detalle: String(error) }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// DELETE /api/clients?id=xxx — eliminar un cliente permanentemente
+// ---------------------------------------------------------------------------
+export async function DELETE(request: NextRequest): Promise<NextResponse> {
+  const { searchParams } = new URL(request.url);
+  const cliente_id = searchParams.get('id');
+  const empresa_id = searchParams.get('empresa_id') ?? EMPRESA_ID;
+
+  if (!cliente_id) {
+    return NextResponse.json({ error: 'id requerido' }, { status: 400 });
+  }
+
+  try {
+    await sql`DELETE FROM clientes WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+    return NextResponse.json({ ok: true });
+  } catch (error) {
+    console.error('[clients DELETE]', error);
+    return NextResponse.json({ error: 'Error eliminando cliente (puede tener pedidos asociados)', detalle: String(error) }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// POST /api/clients — acción masiva: desactivar clientes seleccionados
+// (no elimina, solo activo=false; el historial queda intacto)
+// ---------------------------------------------------------------------------
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  const body = (await request.json()) as { empresa_id?: string; ids: string[] };
+  const empresa_id = body.empresa_id ?? EMPRESA_ID;
+
+  if (!Array.isArray(body.ids) || body.ids.length === 0) {
+    return NextResponse.json({ error: 'ids requerido' }, { status: 400 });
+  }
+
+  try {
+    await sql`
+      UPDATE clientes SET activo = false
+      WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])
+    `;
+    return NextResponse.json({ ok: true, desactivados: body.ids.length });
+  } catch (error) {
+    console.error('[clients POST bulk]', error);
+    return NextResponse.json({ error: 'Error desactivando clientes', detalle: String(error) }, { status: 500 });
   }
 }

@@ -16,6 +16,9 @@ import type {
 // ============================================================
 // IDENTIFICAR_CLIENTE
 // ============================================================
+// No filtra por activo=true a propósito: el webhook necesita distinguir
+// entre "cliente no existe" (crea uno temporal) y "cliente existe pero está
+// inactivo" (gate de no-contacto) — ver app/api/webhook/kapso/route.ts.
 export async function identificarCliente(
   empresa_id: string,
   whatsapp: string
@@ -28,13 +31,16 @@ export async function identificarCliente(
       SELECT * FROM clientes
       WHERE empresa_id = ${empresa_id}
         AND (whatsapp = ${sinPlus} OR whatsapp = ${conPlus})
-        AND activo = true
       LIMIT 1
     `;
     return { data: (rows[0] as Cliente) ?? null, error: null, cached: false };
   } catch (e) {
     return { data: null, error: String(e), cached: false };
   }
+}
+
+export async function reactivarCliente(cliente_id: string): Promise<void> {
+  await sql`UPDATE clientes SET activo = true WHERE id = ${cliente_id}`;
 }
 
 export async function crearClienteTemporal(

@@ -9,21 +9,54 @@ type Row = Record<string, unknown>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const rows = (r: any): Row[] => r as Row[];
 
-async function getOrCreateRuta(empresa_id: string, codigo: string): Promise<string | null> {
+// Intenta garantizar los índices únicos que hacen seguro el UPSERT vía
+// ON CONFLICT. Si ya existen filas duplicadas en producción para
+// (empresa_id, whatsapp) en clientes o (empresa_id, nombre) en rutas, la
+// creación del índice falla — en ese caso se usa el UPSERT manual
+// (SELECT + INSERT/UPDATE) como red de seguridad en vez de tumbar toda
+// la importación con un error de Postgres.
+async function asegurarIndicesUnicos(): Promise<boolean> {
+  try {
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_empresa_whatsapp ON clientes(empresa_id, whatsapp)`;
+    await sql`CREATE UNIQUE INDEX IF NOT EXISTS idx_rutas_empresa_nombre ON rutas(empresa_id, nombre)`;
+    return true;
+  } catch (e) {
+    console.error('[clients/import] No se pudieron crear los índices únicos (probablemente hay duplicados existentes). Se usará UPSERT manual:', e);
+    return false;
+  }
+}
+
+async function getOrCreateRuta(empresa_id: string, codigoCrudo: string, usarOnConflict: boolean): Promise<string | null> {
+  const codigo = codigoCrudo.trim();
   if (!codigo) return null;
   const nombre = `Ruta ${codigo}`;
 
-  const existing = rows(await sql`
+  if (usarOnConflict) {
+    const inserted = rows(await sql`
+      INSERT INTO rutas (empresa_id, nombre, asesor_nombre, activo)
+      VALUES (${empresa_id}, ${nombre}, 'Por asignar', true)
+      ON CONFLICT (empresa_id, nombre) DO NOTHING
+      RETURNING id
+    `);
+    if (inserted.length > 0) return inserted[0].id as string;
+
+    const existente = rows(await sql`
+      SELECT id FROM rutas WHERE empresa_id = ${empresa_id} AND nombre = ${nombre} LIMIT 1
+    `);
+    return existente.length > 0 ? (existente[0].id as string) : null;
+  }
+
+  const existente = rows(await sql`
     SELECT id FROM rutas WHERE empresa_id = ${empresa_id} AND nombre = ${nombre} LIMIT 1
   `);
-  if (existing.length > 0) return existing[0].id as string;
+  if (existente.length > 0) return existente[0].id as string;
 
-  const created = rows(await sql`
+  const creado = rows(await sql`
     INSERT INTO rutas (empresa_id, nombre, asesor_nombre, activo)
     VALUES (${empresa_id}, ${nombre}, 'Por asignar', true)
     RETURNING id
   `);
-  return created[0].id as string;
+  return creado[0].id as string;
 }
 
 // ---------------------------------------------------------------------------
@@ -55,6 +88,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   };
 
   const empresa_id = body.empresa_id ?? EMPRESA_ID;
+  const usarOnConflict = await asegurarIndicesUnicos();
 
   const resultado: ResultadoImportClientes = {
     nuevos: 0,
@@ -71,38 +105,59 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
 
       try {
-        const ruta_id = await getOrCreateRuta(empresa_id, c.ruta_codigo);
+        const ruta_id = await getOrCreateRuta(empresa_id, c.ruta_codigo, usarOnConflict);
 
-        const existing = rows(await sql`
-          SELECT id, nombre_contacto FROM clientes
-          WHERE empresa_id = ${empresa_id} AND whatsapp = ${c.whatsapp}
-          LIMIT 1
-        `);
-
-        if (existing.length > 0) {
-          // El nombre_negocio siempre se actualiza desde el Excel. El
-          // nombre_contacto solo se sobreescribe si sigue siendo el
-          // placeholder de onboarding — no se pisa un nombre real ya
-          // capturado por WhatsApp.
-          const contactoActual = existing[0].nombre_contacto as string | null;
-          const nuevoContacto =
-            !contactoActual || contactoActual === 'Cliente nuevo' ? c.nombre_limpio : contactoActual;
-
-          await sql`
-            UPDATE clientes SET
-              nombre_negocio = ${c.nombre_limpio},
-              nombre_contacto = ${nuevoContacto},
-              ruta_id = COALESCE(${ruta_id}, ruta_id),
-              activo = true
-            WHERE empresa_id = ${empresa_id} AND whatsapp = ${c.whatsapp}
-          `;
-          resultado.actualizados++;
-        } else {
-          await sql`
+        if (usarOnConflict) {
+          // UPSERT real: el nombre_negocio siempre se actualiza desde el Excel;
+          // nombre_contacto solo se pisa si seguía en el placeholder de
+          // onboarding (no se sobreescribe un nombre real ya capturado por WhatsApp).
+          const upsertRows = rows(await sql`
             INSERT INTO clientes (empresa_id, ruta_id, nombre_negocio, nombre_contacto, whatsapp, activo)
             VALUES (${empresa_id}, ${ruta_id}, ${c.nombre_limpio}, ${c.nombre_limpio}, ${c.whatsapp}, true)
-          `;
-          resultado.nuevos++;
+            ON CONFLICT (empresa_id, whatsapp) DO UPDATE SET
+              nombre_negocio = EXCLUDED.nombre_negocio,
+              nombre_contacto = CASE
+                WHEN clientes.nombre_contacto IS NULL OR clientes.nombre_contacto = 'Cliente nuevo'
+                THEN EXCLUDED.nombre_contacto
+                ELSE clientes.nombre_contacto
+              END,
+              ruta_id = COALESCE(EXCLUDED.ruta_id, clientes.ruta_id),
+              activo = true
+            RETURNING (xmax = 0) AS es_nuevo
+          `);
+          if (upsertRows[0]?.es_nuevo) {
+            resultado.nuevos++;
+          } else {
+            resultado.actualizados++;
+          }
+        } else {
+          const existing = rows(await sql`
+            SELECT id, nombre_contacto FROM clientes
+            WHERE empresa_id = ${empresa_id} AND whatsapp = ${c.whatsapp}
+            LIMIT 1
+          `);
+
+          if (existing.length > 0) {
+            const contactoActual = existing[0].nombre_contacto as string | null;
+            const nuevoContacto =
+              !contactoActual || contactoActual === 'Cliente nuevo' ? c.nombre_limpio : contactoActual;
+
+            await sql`
+              UPDATE clientes SET
+                nombre_negocio = ${c.nombre_limpio},
+                nombre_contacto = ${nuevoContacto},
+                ruta_id = COALESCE(${ruta_id}, ruta_id),
+                activo = true
+              WHERE empresa_id = ${empresa_id} AND whatsapp = ${c.whatsapp}
+            `;
+            resultado.actualizados++;
+          } else {
+            await sql`
+              INSERT INTO clientes (empresa_id, ruta_id, nombre_negocio, nombre_contacto, whatsapp, activo)
+              VALUES (${empresa_id}, ${ruta_id}, ${c.nombre_limpio}, ${c.nombre_limpio}, ${c.whatsapp}, true)
+            `;
+            resultado.nuevos++;
+          }
         }
       } catch (err) {
         resultado.errores.push(`Fila ${c.fila_numero} (${c.nombre_limpio}): ${String(err)}`);

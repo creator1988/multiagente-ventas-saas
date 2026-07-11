@@ -4,6 +4,7 @@ import type { KapsoV2Payload, KapsoV2Item } from '@/types';
 import {
   identificarCliente,
   crearClienteTemporal,
+  reactivarCliente,
   obtenerOCrearConversacion,
   obtenerHistorialMensajes,
   guardarMensaje,
@@ -15,6 +16,7 @@ import { sendMessage } from '@/lib/kapso/sendMessage';
 import { descargarMedia } from '@/lib/kapso';
 import { transcribirAudio } from '@/lib/gemini';
 import { notificarEscalado } from '@/lib/resend';
+import { getCached, setCached } from '@/lib/cache';
 import { sql } from '@/lib/db';
 
 const EMPRESA_ID = process.env.EMPRESA_ID_DEFAULT ?? '';
@@ -176,6 +178,33 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         // 1. Buscar tendero en clientes por número WhatsApp
         const { data: cliente } = await identificarCliente(empresa_id, whatsapp);
         console.log(`[kapso-webhook] Cliente encontrado: ${cliente ? cliente.id : 'NO'}`);
+
+        // 1.5 Cliente existe pero está marcado como inactivo (solicitó no-contacto):
+        // no seguir el flujo normal. "ACTIVAR" lo reactiva; cualquier otro mensaje
+        // recibe el aviso de reactivación una sola vez por ventana (cache 24h).
+        if (cliente && !cliente.activo) {
+          const esActivar = textoUsuario.trim().toUpperCase() === 'ACTIVAR';
+
+          if (esActivar) {
+            await reactivarCliente(cliente.id);
+            const conv_id = await obtenerOCrearConversacion(empresa_id, cliente.id);
+            await guardarMensaje({ conversacion_id: conv_id, rol: 'cliente', contenido: textoUsuario });
+            const msg = '¡Bienvenido de nuevo! ¿En qué te puedo ayudar?';
+            await sendMessage(whatsappRaw, msg);
+            await guardarMensaje({ conversacion_id: conv_id, rol: 'agente', contenido: msg });
+            console.log(`[kapso-webhook] Cliente reactivado: ${cliente.id}`);
+            return;
+          }
+
+          const yaAvisado = await getCached(empresa_id, 'cliente_inactivo_avisado', whatsapp);
+          if (!yaAvisado) {
+            const msg = 'Hola, hemos registrado tu solicitud de no contacto. Si deseas reactivar tu cuenta escribe ACTIVAR.';
+            await sendMessage(whatsappRaw, msg);
+            await setCached(empresa_id, 'cliente_inactivo_avisado', whatsapp, 'true', 86400);
+          }
+          console.log(`[kapso-webhook] Cliente inactivo, flujo normal omitido: ${cliente.id}`);
+          return;
+        }
 
         // 2. Si no existe, crear cliente temporal, mostrar categorías y terminar
         if (!cliente) {
