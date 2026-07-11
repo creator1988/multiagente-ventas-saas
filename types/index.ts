@@ -400,6 +400,14 @@ export interface CartItem {
   precio_unitario: number;
 }
 
+export interface ProductoContexto {
+  tipo: 'producto' | 'oferta';
+  id: string;
+  nombre: string;
+  precio: number;
+  stock: number;
+}
+
 export interface EstadoFlujo {
   etapa:
     | 'inicio'
@@ -414,19 +422,16 @@ export interface EstadoFlujo {
     | 'esperando_indice_cantidad'
     | 'esperando_nueva_cantidad'
     | 'esperando_indice_quitar';
-  producto_contexto?: {
-    tipo: 'producto' | 'oferta';
-    id: string;
-    nombre: string;
-    precio: number;
-    stock: number;
-  };
+  producto_contexto?: ProductoContexto;
+  ultimo_producto?: ProductoContexto;
   datos_cliente_temp?: {
     nombre?: string;
     direccion?: string;
   };
   carrito: CartItem[];
   last_categoria_id?: string;
+  last_categoria_nombre?: string;
+  categorias_vistas?: string[];
   modificar_indice?: number;
 }
 

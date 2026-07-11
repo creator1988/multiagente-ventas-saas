@@ -1,4 +1,4 @@
-import type { Cliente, Intencion, EstadoFlujo, CartItem, PedidoItemConNombre } from '@/types';
+import type { Cliente, Intencion, EstadoFlujo, CartItem, PedidoItemConNombre, ProductoContexto } from '@/types';
 import type { ItemPedido } from './query-cards';
 import {
   obtenerCategorias,
@@ -284,7 +284,56 @@ async function mostrarCategorias(
 }
 
 // ============================================================
-// PRIVADO: mostrarProductosCategoria
+// PRIVADO: obtenerNombreCategoria — lookup puntual por id, para etiquetar
+// botones ("Otra de [categoría]") y mensajes de la lista sin imágenes
+// ============================================================
+async function obtenerNombreCategoria(empresa_id: string, categoria_id: string): Promise<string | null> {
+  const rows = await sql`
+    SELECT nombre FROM categorias WHERE id = ${categoria_id} AND empresa_id = ${empresa_id} LIMIT 1
+  `;
+  return rows.length ? (rows[0].nombre as string) : null;
+}
+
+// ============================================================
+// PRIVADO: enviarListaProductosSinImagenes — list_message con nombre+precio,
+// sin imágenes. Usado cuando el cliente ya vio la categoría con fotos, o
+// pide explícitamente "Otra de [categoría]" mientras sigue navegándola.
+// ============================================================
+async function enviarListaProductosSinImagenes(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  categoria_id: string,
+  categoria_nombre: string,
+  productos: Array<{ id: string; nombre: string; precio_lista: number; stock_disponible: number }>
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+
+  const rows = productos.slice(0, 10).map(p => ({
+    id: p.id,
+    title: p.nombre.substring(0, 24),
+    description: `$${p.precio_lista.toLocaleString('es-CO')} | Stock: ${p.stock_disponible}`,
+  }));
+
+  await enviarListMessage(
+    whatsapp,
+    `Productos de ${categoria_nombre}:`,
+    'Seleccionar',
+    [{ title: categoria_nombre.substring(0, 24), rows }]
+  );
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: `Lista de productos de ${categoria_nombre} (sin imágenes)` });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, {
+    ...estado,
+    etapa: 'esperando_producto',
+    last_categoria_id: categoria_id,
+    last_categoria_nombre: categoria_nombre,
+  });
+}
+
+// ============================================================
+// PRIVADO: mostrarProductosCategoria — primera vez que el cliente entra a
+// una categoría: fotos por producto. Si ya la vio antes (categorias_vistas),
+// lista de texto sin imágenes para no repetir contenido ya mostrado.
 // ============================================================
 async function mostrarProductosCategoria(
   params: ProcesarParams,
@@ -294,7 +343,10 @@ async function mostrarProductosCategoria(
   const { empresa_id, whatsapp, conversacion_id, cliente } = params;
   const categoria_id = textoUsuario.replace(/^cat_/, '');
 
-  const { data: productos, error } = await productosPorCategoria(empresa_id, categoria_id);
+  const [{ data: productos, error }, categoria_nombre] = await Promise.all([
+    productosPorCategoria(empresa_id, categoria_id),
+    obtenerNombreCategoria(empresa_id, categoria_id),
+  ]);
 
   if (error || !productos || productos.length === 0) {
     const msg = 'No encontré productos en esa categoría con stock disponible. Te muestro las otras opciones.';
@@ -304,11 +356,24 @@ async function mostrarProductosCategoria(
     return;
   }
 
+  const yaVista = (estado.categorias_vistas ?? []).includes(categoria_id);
+  const nombre = categoria_nombre ?? 'esta categoría';
+
+  if (yaVista) {
+    await enviarListaProductosSinImagenes(params, estado, categoria_id, nombre, productos);
+    return;
+  }
+
   for (const p of productos) {
     await enviarProductoConBoton(whatsapp, p);
   }
 
-  const nuevoEstado: EstadoFlujo = { ...estado, last_categoria_id: categoria_id };
+  const nuevoEstado: EstadoFlujo = {
+    ...estado,
+    last_categoria_id: categoria_id,
+    last_categoria_nombre: nombre,
+    categorias_vistas: [...(estado.categorias_vistas ?? []), categoria_id],
+  };
   await setEstadoFlujo(empresa_id, conversacion_id, nuevoEstado);
 
   await enviarReplyButtons(whatsapp, '¿Qué más deseas hacer?', [
@@ -348,6 +413,37 @@ async function mostrarOfertas(
 }
 
 // ============================================================
+// PRIVADO: mostrarListaDeUltimaCategoria — lista sin imágenes de
+// estado.last_categoria_id. Usada por "Otra de [categoría]" y por el
+// fallback interno cuando una selección de producto no se pudo resolver.
+// ============================================================
+async function mostrarListaDeUltimaCategoria(
+  params: ProcesarParams,
+  estado: EstadoFlujo
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id, cliente } = params;
+
+  if (!estado.last_categoria_id) {
+    await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
+    return;
+  }
+
+  const { data: productos, error } = await productosPorCategoria(empresa_id, estado.last_categoria_id);
+  if (error || !productos || productos.length === 0) {
+    await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
+    return;
+  }
+
+  await enviarListaProductosSinImagenes(
+    params,
+    estado,
+    estado.last_categoria_id,
+    estado.last_categoria_nombre ?? 'esta categoría',
+    productos
+  );
+}
+
+// ============================================================
 // PRIVADO: iniciarAgregarAlPedido
 // ============================================================
 async function iniciarAgregarAlPedido(
@@ -370,38 +466,32 @@ async function iniciarAgregarAlPedido(
     return;
   }
 
-  const esBtnAgregar = textoUsuario === 'btn_agregar' || textoUsuario === 'btn_agregar_mas';
+  // "Agregar más" tras agregar un producto: muestra el menú de 3 opciones
+  // (más del mismo, otra de la misma categoría, otra categoría) en vez de
+  // saltar directo a la lista de la última categoría.
+  if (textoUsuario === 'btn_agregar_mas') {
+    await mostrarMenuAgregarMas(params, estado);
+    return;
+  }
 
-  if (esBtnAgregar) {
-    if (!estado.last_categoria_id) {
-      const msg = '¿De qué categoría quieres agregar productos?';
-      await enviarTexto(whatsapp, msg);
-      await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
-      await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
-      return;
-    }
+  // "Más [producto]": agrega 1 unidad más del último producto agregado, sin pedir cantidad
+  if (textoUsuario === 'btn_mas_ultimo') {
+    await agregarUnidadRapida(params, estado);
+    return;
+  }
 
-    const { data: productos, error } = await productosPorCategoria(empresa_id, estado.last_categoria_id);
-    if (error || !productos || productos.length === 0) {
-      await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
-      return;
-    }
+  // "Otra de [categoría]" y el fallback interno tras una selección inválida
+  // (ver seleccionarProducto) comparten el mismo comportamiento: lista de
+  // texto sin imágenes de la última categoría vista.
+  if (textoUsuario === 'btn_otra_de_cat' || textoUsuario === 'btn_agregar') {
+    await mostrarListaDeUltimaCategoria(params, estado);
+    return;
+  }
 
-    const rows = productos.slice(0, 10).map(p => ({
-      id: p.id,
-      title: p.nombre.substring(0, 24),
-      description: `$${p.precio_lista.toLocaleString('es-CO')} | Stock: ${p.stock_disponible}`,
-    }));
-
-    await enviarListMessage(
-      whatsapp,
-      '¿Cuál producto deseas agregar?',
-      'Seleccionar',
-      [{ title: 'Productos disponibles', rows }]
-    );
-    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: 'Lista de selección de productos' });
-
-    await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'esperando_producto' });
+  // "Otra categoría": menú completo de categorías, igual que el saludo inicial.
+  // El carrito no se toca — mostrarCategorias nunca modifica el estado.
+  if (textoUsuario === 'btn_otra_categoria') {
+    await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
     return;
   }
 
@@ -584,7 +674,7 @@ async function manejarCantidad(
   estado: EstadoFlujo,
   cantidad: number
 ): Promise<void> {
-  const { empresa_id, whatsapp, conversacion_id } = params;
+  const { whatsapp, conversacion_id } = params;
   const p = estado.producto_contexto!;
 
   if (cantidad > p.stock) {
@@ -598,7 +688,22 @@ async function manejarCantidad(
     ? { tipo: 'oferta', oferta_id: p.id, nombre: p.nombre, cantidad, precio_unitario: p.precio }
     : { tipo: 'producto', producto_id: p.id, nombre: p.nombre, cantidad, precio_unitario: p.precio };
 
-  const nuevoCarrito = [...estado.carrito, nuevoItem];
+  await confirmarItemAgregado(params, estado, [...estado.carrito, nuevoItem], p);
+}
+
+// ============================================================
+// PRIVADO: confirmarItemAgregado — cola común tras agregar un item al
+// carrito (desde cantidad manual o desde "Más [producto]"): mensaje de
+// confirmación, botones y persistencia del estado, guardando también
+// ultimo_producto para que el próximo "Más X" sepa qué repetir.
+// ============================================================
+async function confirmarItemAgregado(
+  params: ProcesarParams,
+  estado: EstadoFlujo,
+  nuevoCarrito: CartItem[],
+  ultimoProducto: ProductoContexto
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
   const { texto, total } = resumenCarrito(nuevoCarrito);
 
   const msg = `✅ Agregado. Carrito actual:\n\n${texto}\n\n*Total: $${total.toLocaleString('es-CO')}*`;
@@ -615,7 +720,74 @@ async function manejarCantidad(
     etapa: 'esperando_confirmacion',
     carrito: nuevoCarrito,
     producto_contexto: undefined,
+    ultimo_producto: ultimoProducto,
   });
+}
+
+// ============================================================
+// PRIVADO: mostrarMenuAgregarMas — menú tras "Agregar más": repetir el
+// último producto, ver otra unidad de la misma categoría, o cambiar de
+// categoría. El carrito nunca se toca aquí.
+// ============================================================
+async function mostrarMenuAgregarMas(
+  params: ProcesarParams,
+  estado: EstadoFlujo
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id, cliente } = params;
+
+  const botones: Array<{ id: string; title: string }> = [];
+
+  if (estado.ultimo_producto) {
+    botones.push({ id: 'btn_mas_ultimo', title: `Más ${estado.ultimo_producto.nombre.substring(0, 15)}` });
+  }
+  if (estado.last_categoria_id && estado.last_categoria_nombre) {
+    botones.push({ id: 'btn_otra_de_cat', title: `Otra de ${estado.last_categoria_nombre.substring(0, 15)}` });
+  }
+  botones.push({ id: 'btn_otra_categoria', title: 'Otra categoría' });
+
+  // Sin producto/categoría previa en el estado (ej. carrito armado al repetir
+  // un pedido anterior): no hay nada que "repetir", vamos directo al menú completo.
+  if (botones.length === 1) {
+    await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
+    return;
+  }
+
+  await enviarReplyButtons(whatsapp, '¿Qué deseas agregar?', botones.slice(0, 3));
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: 'Menú de agregar más' });
+}
+
+// ============================================================
+// PRIVADO: agregarUnidadRapida — botón "Más [producto]": agrega 1 unidad
+// más del último producto/oferta agregado, sin volver a preguntar cantidad.
+// ============================================================
+async function agregarUnidadRapida(
+  params: ProcesarParams,
+  estado: EstadoFlujo
+): Promise<void> {
+  const { whatsapp, conversacion_id } = params;
+  const p = estado.ultimo_producto;
+
+  if (!p) {
+    await mostrarMenuAgregarMas(params, estado);
+    return;
+  }
+
+  const yaEnCarrito = estado.carrito
+    .filter(i => (p.tipo === 'oferta' ? i.oferta_id === p.id : i.producto_id === p.id))
+    .reduce((acc, i) => acc + i.cantidad, 0);
+
+  if (yaEnCarrito + 1 > p.stock) {
+    const msg = `Solo tenemos *${p.stock}* unidades de *${p.nombre}* disponibles y ya tienes ${yaEnCarrito} en tu carrito.`;
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    return;
+  }
+
+  const nuevoItem: CartItem = p.tipo === 'oferta'
+    ? { tipo: 'oferta', oferta_id: p.id, nombre: p.nombre, cantidad: 1, precio_unitario: p.precio }
+    : { tipo: 'producto', producto_id: p.id, nombre: p.nombre, cantidad: 1, precio_unitario: p.precio };
+
+  await confirmarItemAgregado(params, estado, [...estado.carrito, nuevoItem], p);
 }
 
 // ============================================================

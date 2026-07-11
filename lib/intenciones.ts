@@ -63,7 +63,10 @@ export function clasificarIntencion(texto: string): Intencion {
   if (texto.startsWith('addoferta_'))                  return 'agregar_pedido';
   if (texto.startsWith('add_'))                        return 'agregar_pedido';
   if (texto === 'btn_agregar' ||
-      texto === 'btn_agregar_mas')                     return 'agregar_pedido';
+      texto === 'btn_agregar_mas' ||
+      texto === 'btn_mas_ultimo' ||
+      texto === 'btn_otra_de_cat' ||
+      texto === 'btn_otra_categoria')                  return 'agregar_pedido';
   if (texto === 'btn_confirmar' ||
       texto === 'btn_confirmar_igual' ||
       texto === 'btn_confirmar_final')                 return 'confirmar_pedido';
