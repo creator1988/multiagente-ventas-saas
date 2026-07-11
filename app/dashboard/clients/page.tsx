@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import type { Ruta } from '@/types';
 
 interface ClienteFila {
   id: string;
@@ -14,6 +15,8 @@ interface ClienteFila {
   barrio: string | null;
   tipo_negocio: string | null;
   activo: boolean;
+  ruta_id: string | null;
+  ruta_nombre: string | null;
   ultimo_pedido?: string;
   total_pedidos?: number;
 }
@@ -26,6 +29,7 @@ interface ValoresEdicion {
   barrio: string;
   tipo_negocio: string;
   activo: boolean;
+  ruta_id: string;
 }
 
 const VALORES_VACIOS: ValoresEdicion = {
@@ -36,10 +40,14 @@ const VALORES_VACIOS: ValoresEdicion = {
   barrio: '',
   tipo_negocio: '',
   activo: true,
+  ruta_id: '',
 };
+
+type AccionMasiva = 'desactivar' | 'activar' | 'eliminar' | 'asignar_ruta';
 
 export default function ClientsPage() {
   const [clientes, setClientes] = useState<ClienteFila[]>([]);
+  const [rutas, setRutas] = useState<Ruta[]>([]);
   const [loading, setLoading] = useState(true);
   const [busqueda, setBusqueda] = useState('');
 
@@ -49,13 +57,20 @@ export default function ClientsPage() {
   const [guardando, setGuardando] = useState(false);
   const [confirmarEliminarId, setConfirmarEliminarId] = useState<string | null>(null);
   const [eliminando, setEliminando] = useState(false);
-  const [desactivando, setDesactivando] = useState(false);
+  const [procesandoMasivo, setProcesandoMasivo] = useState(false);
+  const [confirmarEliminarMasivo, setConfirmarEliminarMasivo] = useState(false);
+  const [rutaMasivaId, setRutaMasivaId] = useState('');
 
   async function cargar() {
     setLoading(true);
-    const res = await fetch('/api/clients');
-    const json = (await res.json()) as { data: ClienteFila[] };
-    setClientes(json.data ?? []);
+    const [resClientes, resRutas] = await Promise.all([
+      fetch('/api/clients'),
+      fetch('/api/routes'),
+    ]);
+    const jsonClientes = (await resClientes.json()) as { data: ClienteFila[] };
+    const jsonRutas = (await resRutas.json()) as { data?: Ruta[] };
+    setClientes(jsonClientes.data ?? []);
+    setRutas(jsonRutas.data ?? []);
     setLoading(false);
   }
 
@@ -69,11 +84,26 @@ export default function ClientsPage() {
       c.whatsapp.includes(busqueda)
   );
 
+  const todosSeleccionados = filtrados.length > 0 && filtrados.every((c) => seleccionados.has(c.id));
+
   function toggleSeleccionado(id: string) {
     setSeleccionados((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleSeleccionarTodos() {
+    setSeleccionados((prev) => {
+      if (todosSeleccionados) {
+        const next = new Set(prev);
+        filtrados.forEach((c) => next.delete(c.id));
+        return next;
+      }
+      const next = new Set(prev);
+      filtrados.forEach((c) => next.add(c.id));
       return next;
     });
   }
@@ -89,6 +119,7 @@ export default function ClientsPage() {
       barrio: c.barrio ?? '',
       tipo_negocio: c.tipo_negocio ?? '',
       activo: c.activo,
+      ruta_id: c.ruta_id ?? '',
     });
   }
 
@@ -98,7 +129,7 @@ export default function ClientsPage() {
       await fetch(`/api/clients?id=${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(valoresEdicion),
+        body: JSON.stringify({ ...valoresEdicion, ruta_id: valoresEdicion.ruta_id || null }),
       });
       setEditandoId(null);
       await cargar();
@@ -128,19 +159,25 @@ export default function ClientsPage() {
     }
   }
 
-  async function desactivarSeleccionados() {
+  async function ejecutarAccionMasiva(accion: AccionMasiva, ruta_id?: string | null) {
     if (seleccionados.size === 0) return;
-    setDesactivando(true);
+    setProcesandoMasivo(true);
     try {
-      await fetch('/api/clients', {
+      const res = await fetch('/api/clients', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: Array.from(seleccionados) }),
+        body: JSON.stringify({ ids: Array.from(seleccionados), accion, ruta_id }),
       });
+      if (!res.ok) {
+        const json = (await res.json()) as { error?: string };
+        alert(`Error: ${json.error ?? 'desconocido'}`);
+      }
       setSeleccionados(new Set());
+      setConfirmarEliminarMasivo(false);
+      setRutaMasivaId('');
       await cargar();
     } finally {
-      setDesactivando(false);
+      setProcesandoMasivo(false);
     }
   }
 
@@ -164,24 +201,87 @@ export default function ClientsPage() {
         onChange={(e) => setBusqueda(e.target.value)}
       />
 
+      <div className="flex items-center justify-between mb-3 px-1">
+        <label className="flex items-center gap-2 text-sm text-gray-600">
+          <input type="checkbox" checked={todosSeleccionados} onChange={toggleSeleccionarTodos} className="w-4 h-4" />
+          Seleccionar todos ({filtrados.length})
+        </label>
+      </div>
+
       {seleccionados.size > 0 && (
-        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 flex items-center justify-between">
-          <span className="text-sm text-amber-800">{seleccionados.size} cliente(s) seleccionado(s)</span>
-          <div className="flex gap-2">
-            <button
-              onClick={desactivarSeleccionados}
-              disabled={desactivando}
-              className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
-            >
-              {desactivando ? 'Desactivando…' : 'Desactivar seleccionados'}
-            </button>
-            <button
-              onClick={() => setSeleccionados(new Set())}
-              className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-sm"
-            >
-              Cancelar
-            </button>
+        <div className="mb-4 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <span className="text-sm text-amber-800">{seleccionados.size} cliente(s) seleccionado(s)</span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <select
+                value={rutaMasivaId}
+                onChange={(e) => setRutaMasivaId(e.target.value)}
+                className="border border-amber-300 rounded-lg px-2 py-1.5 text-sm bg-white"
+              >
+                <option value="">Asignar ruta…</option>
+                {rutas.map((r) => (
+                  <option key={r.id} value={r.id}>{r.nombre}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => ejecutarAccionMasiva('asignar_ruta', rutaMasivaId)}
+                disabled={procesandoMasivo || !rutaMasivaId}
+                className="bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+              >
+                Asignar ruta
+              </button>
+              <button
+                onClick={() => ejecutarAccionMasiva('activar')}
+                disabled={procesandoMasivo}
+                className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+              >
+                Activar seleccionados
+              </button>
+              <button
+                onClick={() => ejecutarAccionMasiva('desactivar')}
+                disabled={procesandoMasivo}
+                className="bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+              >
+                Desactivar seleccionados
+              </button>
+              <button
+                onClick={() => setConfirmarEliminarMasivo(true)}
+                disabled={procesandoMasivo}
+                className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+              >
+                Eliminar seleccionados
+              </button>
+              <button
+                onClick={() => setSeleccionados(new Set())}
+                className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-sm"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
+
+          {confirmarEliminarMasivo && (
+            <div className="mt-3 pt-3 border-t border-amber-200">
+              <p className="text-sm text-red-800 mb-2">
+                ¿Eliminar <strong>{seleccionados.size}</strong> cliente(s)? Esta acción no se puede deshacer.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => ejecutarAccionMasiva('eliminar')}
+                  disabled={procesandoMasivo}
+                  className="bg-red-600 hover:bg-red-700 disabled:opacity-50 text-white px-3 py-1.5 rounded-lg text-sm font-medium"
+                >
+                  {procesandoMasivo ? 'Eliminando…' : 'Sí, eliminar'}
+                </button>
+                <button
+                  onClick={() => setConfirmarEliminarMasivo(false)}
+                  className="border border-gray-300 text-gray-600 px-3 py-1.5 rounded-lg text-sm"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -207,6 +307,10 @@ export default function ClientsPage() {
                 </div>
               </div>
               <div className="flex items-center gap-4 flex-shrink-0">
+                <div className="text-right">
+                  <p className="text-sm text-gray-500">Ruta</p>
+                  <p className="font-medium text-gray-700">{c.ruta_nombre ?? 'Sin ruta'}</p>
+                </div>
                 <div className="text-right">
                   <p className="text-sm text-gray-500">Pedidos</p>
                   <p className="font-semibold">{c.total_pedidos ?? 0}</p>
@@ -289,6 +393,19 @@ export default function ClientsPage() {
                     onChange={(e) => setValoresEdicion((v) => ({ ...v, barrio: e.target.value }))}
                   />
                 </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Ruta</label>
+                  <select
+                    className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm bg-white"
+                    value={valoresEdicion.ruta_id}
+                    onChange={(e) => setValoresEdicion((v) => ({ ...v, ruta_id: e.target.value }))}
+                  >
+                    <option value="">Sin ruta</option>
+                    {rutas.map((r) => (
+                      <option key={r.id} value={r.id}>{r.nombre}</option>
+                    ))}
+                  </select>
+                </div>
                 <div className="flex items-center gap-2">
                   <input
                     type="checkbox"
@@ -297,7 +414,7 @@ export default function ClientsPage() {
                   />
                   <label className="text-sm text-gray-700">Cliente activo</label>
                 </div>
-                <div className="flex items-end justify-end gap-2">
+                <div className="col-span-2 flex items-end justify-end gap-2">
                   <button
                     onClick={() => guardarEdicion(c.id)}
                     disabled={guardando}

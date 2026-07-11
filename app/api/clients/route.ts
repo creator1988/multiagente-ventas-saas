@@ -16,13 +16,15 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       rows = await sql`
         SELECT c.*,
                COALESCE(c.nombre_negocio, c.nombre_contacto) AS nombre,
+               r.nombre AS ruta_nombre,
                COUNT(p.id) AS total_pedidos,
                MAX(p.creado_at) AS ultimo_pedido
         FROM clientes c
         LEFT JOIN pedidos p ON p.cliente_id = c.id
+        LEFT JOIN rutas r ON r.id = c.ruta_id
         WHERE c.empresa_id = ${empresa_id}
           AND c.whatsapp = ${whatsapp}
-        GROUP BY c.id
+        GROUP BY c.id, r.nombre
         LIMIT 1
       `;
     } else if (inactivos) {
@@ -36,12 +38,14 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       rows = await sql`
         SELECT c.*,
                COALESCE(c.nombre_negocio, c.nombre_contacto) AS nombre,
+               r.nombre AS ruta_nombre,
                COUNT(p.id) AS total_pedidos,
                MAX(p.creado_at) AS ultimo_pedido
         FROM clientes c
         LEFT JOIN pedidos p ON p.cliente_id = c.id
+        LEFT JOIN rutas r ON r.id = c.ruta_id
         WHERE c.empresa_id = ${empresa_id}
-        GROUP BY c.id
+        GROUP BY c.id, r.nombre
         ORDER BY COALESCE(c.nombre_negocio, c.nombre_contacto)
       `;
     }
@@ -73,6 +77,7 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     barrio?: string;
     tipo_negocio?: string;
     activo?: boolean;
+    ruta_id?: string | null;
   };
 
   const empresa_id = body.empresa_id ?? EMPRESA_ID;
@@ -98,6 +103,9 @@ export async function PATCH(request: NextRequest): Promise<NextResponse> {
     }
     if (body.activo !== undefined) {
       await sql`UPDATE clientes SET activo = ${body.activo} WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+    }
+    if (body.ruta_id !== undefined) {
+      await sql`UPDATE clientes SET ruta_id = ${body.ruta_id} WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
     }
 
     return NextResponse.json({ ok: true });
@@ -129,11 +137,19 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/clients — acción masiva: desactivar clientes seleccionados
-// (no elimina, solo activo=false; el historial queda intacto)
+// POST /api/clients — acciones masivas sobre clientes seleccionados:
+// desactivar, activar, eliminar o asignar ruta. Desactivar/activar nunca
+// borran nada (el historial queda intacto); eliminar sí es permanente.
 // ---------------------------------------------------------------------------
+type AccionMasiva = 'desactivar' | 'activar' | 'eliminar' | 'asignar_ruta';
+
 export async function POST(request: NextRequest): Promise<NextResponse> {
-  const body = (await request.json()) as { empresa_id?: string; ids: string[] };
+  const body = (await request.json()) as {
+    empresa_id?: string;
+    ids: string[];
+    accion: AccionMasiva;
+    ruta_id?: string | null;
+  };
   const empresa_id = body.empresa_id ?? EMPRESA_ID;
 
   if (!Array.isArray(body.ids) || body.ids.length === 0) {
@@ -141,13 +157,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   }
 
   try {
-    await sql`
-      UPDATE clientes SET activo = false
-      WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])
-    `;
-    return NextResponse.json({ ok: true, desactivados: body.ids.length });
+    switch (body.accion) {
+      case 'desactivar':
+        await sql`UPDATE clientes SET activo = false WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])`;
+        break;
+      case 'activar':
+        await sql`UPDATE clientes SET activo = true WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])`;
+        break;
+      case 'eliminar':
+        await sql`DELETE FROM clientes WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])`;
+        break;
+      case 'asignar_ruta':
+        await sql`UPDATE clientes SET ruta_id = ${body.ruta_id ?? null} WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])`;
+        break;
+      default:
+        return NextResponse.json({ error: 'accion inválida' }, { status: 400 });
+    }
+
+    return NextResponse.json({ ok: true, afectados: body.ids.length });
   } catch (error) {
     console.error('[clients POST bulk]', error);
-    return NextResponse.json({ error: 'Error desactivando clientes', detalle: String(error) }, { status: 500 });
+    return NextResponse.json({ error: 'Error en la acción masiva', detalle: String(error) }, { status: 500 });
   }
 }

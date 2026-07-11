@@ -1,9 +1,9 @@
 'use client';
 
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import * as XLSX from 'xlsx';
-import type { ClienteImportRow, ResultadoImportClientes } from '@/types';
+import type { ClienteImportRow, ResultadoImportClientes, AsignacionRutaImport, Ruta } from '@/types';
 import { toTitulo } from '@/lib/nombre-limpio';
 
 // ---------------------------------------------------------------------------
@@ -67,8 +67,10 @@ function parsearExcel(buffer: ArrayBuffer): ClienteImportRow[] {
 // Componente principal
 // ---------------------------------------------------------------------------
 
-type Paso = 1 | 2 | 3;
+type Paso = 'subir' | 'rutas' | 'preview' | 'resultado';
 type EstadoPreview = 'nuevo' | 'existente' | 'invalido';
+
+const CREAR_NUEVA = '__crear_nueva__';
 
 function EstadoBadge({ estado }: { estado: EstadoPreview }) {
   const estilos: Record<EstadoPreview, string> = {
@@ -86,14 +88,21 @@ function EstadoBadge({ estado }: { estado: EstadoPreview }) {
 
 export default function ImportarClientesPage() {
   const inputRef = useRef<HTMLInputElement>(null);
-  const [paso, setPaso] = useState<Paso>(1);
+  const [paso, setPaso] = useState<Paso>('subir');
   const [archivoNombre, setArchivoNombre] = useState('');
   const [clientes, setClientes] = useState<ClienteImportRow[]>([]);
   const [existentes, setExistentes] = useState<Set<string>>(new Set());
+  const [rutasExistentes, setRutasExistentes] = useState<Ruta[]>([]);
+  const [asignaciones, setAsignaciones] = useState<Record<string, AsignacionRutaImport>>({});
   const [cargando, setCargando] = useState(false);
   const [resultado, setResultado] = useState<ResultadoImportClientes | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [errorArchivo, setErrorArchivo] = useState<string | null>(null);
+
+  const codigosDetectados = useMemo(() => {
+    const set = new Set(clientes.map((c) => c.ruta_codigo).filter(Boolean));
+    return Array.from(set).sort();
+  }, [clientes]);
 
   const procesarArchivo = useCallback(async (file: File) => {
     if (!file.name.endsWith('.xlsx')) {
@@ -104,9 +113,10 @@ export default function ImportarClientesPage() {
     setCargando(true);
     setErrorArchivo(null);
     try {
-      const [buffer, existentesRes] = await Promise.all([
+      const [buffer, existentesRes, rutasRes] = await Promise.all([
         file.arrayBuffer(),
         fetch('/api/clients/import').then((r) => r.json() as Promise<{ data?: string[]; error?: string }>),
+        fetch('/api/routes').then((r) => r.json() as Promise<{ data?: Ruta[]; error?: string }>),
       ]);
       const filas = parsearExcel(buffer);
       if (filas.length === 0) {
@@ -114,9 +124,27 @@ export default function ImportarClientesPage() {
         setCargando(false);
         return;
       }
+
+      const rutas = rutasRes.data ?? [];
       setClientes(filas);
       setExistentes(new Set(existentesRes.data ?? []));
-      setPaso(2);
+      setRutasExistentes(rutas);
+
+      // Prellenar una decisión por cada código de ruta detectado: si existe
+      // una ruta con nombre exacto "Ruta {codigo}" se preselecciona (el
+      // usuario la ve y puede cambiarla); si no, se sugiere crear una nueva.
+      const codigos = Array.from(new Set(filas.map((c) => c.ruta_codigo).filter(Boolean)));
+      const iniciales: Record<string, AsignacionRutaImport> = {};
+      for (const codigo of codigos) {
+        const nombreSugerido = `Ruta ${codigo}`;
+        const coincidencia = rutas.find((r) => r.nombre === nombreSugerido);
+        iniciales[codigo] = coincidencia
+          ? { ruta_codigo: codigo, ruta_id: coincidencia.id, crear_nueva: false, nombre_sugerido: nombreSugerido }
+          : { ruta_codigo: codigo, ruta_id: null, crear_nueva: true, nombre_sugerido: nombreSugerido };
+      }
+      setAsignaciones(iniciales);
+
+      setPaso(codigos.length > 0 ? 'rutas' : 'preview');
     } catch (err) {
       setErrorArchivo(`Error leyendo el archivo: ${String(err)}`);
     } finally {
@@ -133,6 +161,25 @@ export default function ImportarClientesPage() {
     },
     [procesarArchivo]
   );
+
+  function actualizarAsignacion(codigo: string, valorSelect: string) {
+    setAsignaciones((prev) => {
+      const nombreSugerido = `Ruta ${codigo}`;
+      if (valorSelect === CREAR_NUEVA) {
+        return { ...prev, [codigo]: { ruta_codigo: codigo, ruta_id: null, crear_nueva: true, nombre_sugerido: nombreSugerido } };
+      }
+      return { ...prev, [codigo]: { ruta_codigo: codigo, ruta_id: valorSelect, crear_nueva: false, nombre_sugerido: nombreSugerido } };
+    });
+  }
+
+  function nombreRutaResuelta(codigo: string): string {
+    if (!codigo) return 'Sin ruta';
+    const asignacion = asignaciones[codigo];
+    if (!asignacion) return `Ruta ${codigo}`;
+    if (asignacion.crear_nueva) return `Nueva: ${asignacion.nombre_sugerido}`;
+    const ruta = rutasExistentes.find((r) => r.id === asignacion.ruta_id);
+    return ruta ? ruta.nombre : `Ruta ${codigo}`;
+  }
 
   const estadoDeFila = (c: ClienteImportRow): EstadoPreview => {
     if (!c.valido || !c.whatsapp) return 'invalido';
@@ -154,12 +201,12 @@ export default function ImportarClientesPage() {
       const res = await fetch('/api/clients/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ clientes }),
+        body: JSON.stringify({ clientes, asignaciones: Object.values(asignaciones) }),
       });
       const json = (await res.json()) as { data?: ResultadoImportClientes; error?: string };
       if (json.data) {
         setResultado(json.data);
-        setPaso(3);
+        setPaso('resultado');
       } else {
         alert(`Error: ${json.error ?? 'desconocido'}`);
       }
@@ -172,9 +219,9 @@ export default function ImportarClientesPage() {
 
   return (
     <>
-      {/* ---- Paso 1: Drop zone ---- */}
-      {paso === 1 && (
-        <div key="paso-1" className="p-6 max-w-2xl mx-auto">
+      {/* ---- Paso subir: Drop zone ---- */}
+      {paso === 'subir' && (
+        <div key="paso-subir" className="p-6 max-w-2xl mx-auto">
           <div className="flex items-center gap-3 mb-6">
             <Link href="/dashboard/clients" className="text-gray-400 hover:text-gray-600 text-sm">
               ← Clientes
@@ -243,9 +290,63 @@ export default function ImportarClientesPage() {
         </div>
       )}
 
-      {/* ---- Paso 2: Vista previa ---- */}
-      {paso === 2 && (
-        <div key="paso-2" className="p-6 max-w-6xl mx-auto">
+      {/* ---- Paso rutas: asignar cada código detectado a una ruta del sistema ---- */}
+      {paso === 'rutas' && (
+        <div key="paso-rutas" className="p-6 max-w-3xl mx-auto">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Asignar rutas</h1>
+              <p className="text-sm text-gray-500 mt-1">
+                Confirma a qué ruta del sistema corresponde cada código detectado en el Excel.
+              </p>
+            </div>
+            <button
+              onClick={() => setPaso('subir')}
+              className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm"
+            >
+              Cambiar archivo
+            </button>
+          </div>
+
+          <div className="space-y-4 mb-6">
+            {codigosDetectados.map((codigo) => {
+              const cantidad = clientes.filter((c) => c.ruta_codigo === codigo).length;
+              const asignacion = asignaciones[codigo];
+              const valorSelect = asignacion?.crear_nueva ? CREAR_NUEVA : asignacion?.ruta_id ?? '';
+
+              return (
+                <div key={codigo} className="bg-white border border-gray-200 rounded-lg p-4">
+                  <p className="text-sm text-gray-800 mb-2">
+                    Se detectaron clientes de la ruta <strong>{codigo}</strong> ({cantidad} clientes).
+                    ¿A qué ruta del sistema corresponde?
+                  </p>
+                  <select
+                    value={valorSelect}
+                    onChange={(e) => actualizarAsignacion(codigo, e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {rutasExistentes.map((r) => (
+                      <option key={r.id} value={r.id}>{r.nombre}</option>
+                    ))}
+                    <option value={CREAR_NUEVA}>+ Crear nueva ruta &ldquo;Ruta {codigo}&rdquo;</option>
+                  </select>
+                </div>
+              );
+            })}
+          </div>
+
+          <button
+            onClick={() => setPaso('preview')}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+          >
+            Revisar e importar →
+          </button>
+        </div>
+      )}
+
+      {/* ---- Paso preview: Vista previa ---- */}
+      {paso === 'preview' && (
+        <div key="paso-preview" className="p-6 max-w-6xl mx-auto">
           <div className="flex items-center justify-between mb-6">
             <div>
               <h1 className="text-2xl font-bold text-gray-900">Vista previa — {archivoNombre}</h1>
@@ -258,10 +359,10 @@ export default function ImportarClientesPage() {
             </div>
             <div className="flex gap-3">
               <button
-                onClick={() => setPaso(1)}
+                onClick={() => setPaso(codigosDetectados.length > 0 ? 'rutas' : 'subir')}
                 className="border border-gray-300 text-gray-600 px-4 py-2 rounded-lg text-sm"
               >
-                Cambiar archivo
+                ← Volver
               </button>
               <button
                 onClick={importar}
@@ -303,9 +404,7 @@ export default function ImportarClientesPage() {
                       <td className="px-3 py-2 font-mono text-xs text-gray-600">
                         {c.whatsapp ?? <span className="text-red-500">{c.motivo_invalido}</span>}
                       </td>
-                      <td className="px-3 py-2 text-gray-600">
-                        {c.ruta_codigo ? `Ruta ${c.ruta_codigo}` : <span className="text-gray-400">Sin ruta</span>}
-                      </td>
+                      <td className="px-3 py-2 text-gray-600">{nombreRutaResuelta(c.ruta_codigo)}</td>
                       <td className="px-3 py-2">
                         <EstadoBadge estado={estado} />
                       </td>
@@ -318,15 +417,15 @@ export default function ImportarClientesPage() {
         </div>
       )}
 
-      {/* ---- Paso 3: Resultado ---- */}
-      {paso === 3 && resultado && (
-        <div key="paso-3" className="p-6 max-w-2xl mx-auto">
+      {/* ---- Paso resultado ---- */}
+      {paso === 'resultado' && resultado && (
+        <div key="paso-resultado" className="p-6 max-w-2xl mx-auto">
           <div className="text-center mb-8">
             <div className="text-5xl mb-3">✅</div>
             <h1 className="text-2xl font-bold text-gray-900">¡Importación completada!</h1>
           </div>
 
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-2 gap-4 mb-6">
             <div className="bg-green-50 border border-green-200 rounded-xl p-5 text-center">
               <p className="text-3xl font-bold text-green-700">{resultado.nuevos}</p>
               <p className="text-sm text-green-600 mt-1">Clientes nuevos</p>
@@ -334,6 +433,10 @@ export default function ImportarClientesPage() {
             <div className="bg-blue-50 border border-blue-200 rounded-xl p-5 text-center">
               <p className="text-3xl font-bold text-blue-700">{resultado.actualizados}</p>
               <p className="text-sm text-blue-600 mt-1">Actualizados</p>
+            </div>
+            <div className="bg-purple-50 border border-purple-200 rounded-xl p-5 text-center">
+              <p className="text-3xl font-bold text-purple-700">{resultado.rutas_creadas}</p>
+              <p className="text-sm text-purple-600 mt-1">Rutas nuevas creadas</p>
             </div>
             <div className="bg-red-50 border border-red-200 rounded-xl p-5 text-center">
               <p className="text-3xl font-bold text-red-700">{resultado.invalidos}</p>
@@ -363,10 +466,12 @@ export default function ImportarClientesPage() {
             </Link>
             <button
               onClick={() => {
-                setPaso(1);
+                setPaso('subir');
                 setResultado(null);
                 setClientes([]);
                 setExistentes(new Set());
+                setRutasExistentes([]);
+                setAsignaciones({});
                 setArchivoNombre('');
               }}
               className="flex-1 border border-gray-300 text-gray-600 px-4 py-3 rounded-lg text-sm"

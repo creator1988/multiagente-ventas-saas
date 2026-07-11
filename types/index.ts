@@ -12,6 +12,22 @@ export interface Empresa {
   created_at: Date;
 }
 
+export interface Ruta {
+  id: string;
+  empresa_id: string;
+  nombre: string;
+  asesor_nombre?: string | null;
+  asesor_telefono?: string | null;
+  asesor_whatsapp?: string | null;
+  dias_visita?: string | null;
+  zona_cobertura?: string | null;
+  activo: boolean;
+}
+
+export interface RutaConClientes extends Ruta {
+  total_clientes: number;
+}
+
 export interface Cliente {
   id: string;
   empresa_id: string;
@@ -362,10 +378,21 @@ export interface ClienteImportRow {
   motivo_invalido?: string;
 }
 
+// Decisión explícita del usuario en la previsualización: a qué ruta del
+// sistema corresponde cada código de ruta detectado en el Excel (existente
+// o nueva) — nunca se asume ni se crea automáticamente.
+export interface AsignacionRutaImport {
+  ruta_codigo: string;
+  ruta_id: string | null;
+  crear_nueva: boolean;
+  nombre_sugerido: string;
+}
+
 export interface ResultadoImportClientes {
   nuevos: number;
   actualizados: number;
   invalidos: number;
+  rutas_creadas: number;
   errores: string[];
 }
 

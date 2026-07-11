@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { sql } from '@/lib/db';
-import type { ClienteImportRow, ResultadoImportClientes } from '@/types';
+import type { ClienteImportRow, ResultadoImportClientes, AsignacionRutaImport } from '@/types';
 
 const EMPRESA_ID = process.env.EMPRESA_ID_DEFAULT ?? '';
 
@@ -26,10 +26,11 @@ async function asegurarIndicesUnicos(): Promise<boolean> {
   }
 }
 
-async function getOrCreateRuta(empresa_id: string, codigoCrudo: string, usarOnConflict: boolean): Promise<string | null> {
-  const codigo = codigoCrudo.trim();
-  if (!codigo) return null;
-  const nombre = `Ruta ${codigo}`;
+// Crea (o encuentra) la ruta con el nombre exacto que el usuario confirmó
+// en la previsualización — nunca se deriva ni se asume un nombre aquí.
+async function getOrCreateRutaPorNombre(empresa_id: string, nombreCrudo: string, usarOnConflict: boolean): Promise<string | null> {
+  const nombre = nombreCrudo.trim();
+  if (!nombre) return null;
 
   if (usarOnConflict) {
     const inserted = rows(await sql`
@@ -79,12 +80,16 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
 }
 
 // ---------------------------------------------------------------------------
-// POST /api/clients/import — UPSERT de clientes por whatsapp
+// POST /api/clients/import — UPSERT de clientes por whatsapp. La ruta de
+// cada cliente se resuelve por la decisión explícita del usuario en
+// `asignaciones` (una por cada código de ruta detectado en el Excel) — nunca
+// se crea o asume una ruta automáticamente a partir del código.
 // ---------------------------------------------------------------------------
 export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = (await request.json()) as {
     empresa_id?: string;
     clientes: ClienteImportRow[];
+    asignaciones: AsignacionRutaImport[];
   };
 
   const empresa_id = body.empresa_id ?? EMPRESA_ID;
@@ -94,8 +99,26 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     nuevos: 0,
     actualizados: 0,
     invalidos: 0,
+    rutas_creadas: 0,
     errores: [],
   };
+
+  // Resolver, por cada código de ruta detectado, el ruta_id final según lo
+  // que el usuario eligió en la previsualización (existente o crear nueva).
+  const mapaRutas = new Map<string, string | null>();
+  for (const a of body.asignaciones ?? []) {
+    try {
+      if (a.crear_nueva) {
+        const ruta_id = await getOrCreateRutaPorNombre(empresa_id, a.nombre_sugerido, usarOnConflict);
+        mapaRutas.set(a.ruta_codigo, ruta_id);
+        if (ruta_id) resultado.rutas_creadas++;
+      } else {
+        mapaRutas.set(a.ruta_codigo, a.ruta_id ?? null);
+      }
+    } catch (err) {
+      resultado.errores.push(`Ruta "${a.ruta_codigo}": ${String(err)}`);
+    }
+  }
 
   try {
     for (const c of body.clientes) {
@@ -105,7 +128,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       }
 
       try {
-        const ruta_id = await getOrCreateRuta(empresa_id, c.ruta_codigo, usarOnConflict);
+        const ruta_id = c.ruta_codigo ? mapaRutas.get(c.ruta_codigo) ?? null : null;
 
         if (usarOnConflict) {
           // UPSERT real: el nombre_negocio siempre se actualiza desde el Excel;
