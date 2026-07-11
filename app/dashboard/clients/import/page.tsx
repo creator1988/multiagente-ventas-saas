@@ -172,6 +172,15 @@ export default function ImportarClientesPage() {
     });
   }
 
+  function actualizarNombreNuevaRuta(codigo: string, nombre: string) {
+    setAsignaciones((prev) => ({
+      ...prev,
+      [codigo]: { ...prev[codigo], ruta_codigo: codigo, ruta_id: null, crear_nueva: true, nombre_sugerido: nombre },
+    }));
+  }
+
+  const faltaNombreRutaNueva = Object.values(asignaciones).some((a) => a.crear_nueva && !a.nombre_sugerido.trim());
+
   function nombreRutaResuelta(codigo: string): string {
     if (!codigo) return 'Sin ruta';
     const asignacion = asignaciones[codigo];
@@ -328,8 +337,17 @@ export default function ImportarClientesPage() {
                     {rutasExistentes.map((r) => (
                       <option key={r.id} value={r.id}>{r.nombre}</option>
                     ))}
-                    <option value={CREAR_NUEVA}>+ Crear nueva ruta &ldquo;Ruta {codigo}&rdquo;</option>
+                    <option value={CREAR_NUEVA}>+ Crear nueva ruta</option>
                   </select>
+                  {asignacion?.crear_nueva && (
+                    <input
+                      type="text"
+                      placeholder={`Ruta ${codigo}`}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mt-2"
+                      value={asignacion.nombre_sugerido}
+                      onChange={(e) => actualizarNombreNuevaRuta(codigo, e.target.value)}
+                    />
+                  )}
                 </div>
               );
             })}
@@ -337,10 +355,14 @@ export default function ImportarClientesPage() {
 
           <button
             onClick={() => setPaso('preview')}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium"
+            disabled={faltaNombreRutaNueva}
+            className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white px-4 py-2 rounded-lg text-sm font-medium"
           >
             Revisar e importar →
           </button>
+          {faltaNombreRutaNueva && (
+            <p className="text-xs text-red-600 mt-2">Escribe un nombre para cada ruta nueva antes de continuar.</p>
+          )}
         </div>
       )}
 

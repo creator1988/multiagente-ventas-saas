@@ -45,6 +45,8 @@ const VALORES_VACIOS: ValoresEdicion = {
 
 type AccionMasiva = 'desactivar' | 'activar' | 'eliminar' | 'asignar_ruta';
 
+const CREAR_NUEVA_RUTA = '__crear_nueva__';
+
 export default function ClientsPage() {
   const [clientes, setClientes] = useState<ClienteFila[]>([]);
   const [rutas, setRutas] = useState<Ruta[]>([]);
@@ -54,6 +56,7 @@ export default function ClientsPage() {
   const [seleccionados, setSeleccionados] = useState<Set<string>>(new Set());
   const [editandoId, setEditandoId] = useState<string | null>(null);
   const [valoresEdicion, setValoresEdicion] = useState<ValoresEdicion>(VALORES_VACIOS);
+  const [nuevaRutaNombre, setNuevaRutaNombre] = useState('');
   const [guardando, setGuardando] = useState(false);
   const [confirmarEliminarId, setConfirmarEliminarId] = useState<string | null>(null);
   const [eliminando, setEliminando] = useState(false);
@@ -111,6 +114,7 @@ export default function ClientsPage() {
   function iniciarEdicion(c: ClienteFila) {
     setConfirmarEliminarId(null);
     setEditandoId(c.id);
+    setNuevaRutaNombre('');
     setValoresEdicion({
       nombre_negocio: c.nombre_negocio ?? '',
       telefono: c.telefono ?? '',
@@ -124,14 +128,38 @@ export default function ClientsPage() {
   }
 
   async function guardarEdicion(id: string) {
+    if (valoresEdicion.ruta_id === CREAR_NUEVA_RUTA && !nuevaRutaNombre.trim()) {
+      alert('Escribe un nombre para la nueva ruta.');
+      return;
+    }
+
     setGuardando(true);
     try {
+      let ruta_id: string | null = valoresEdicion.ruta_id || null;
+
+      if (valoresEdicion.ruta_id === CREAR_NUEVA_RUTA) {
+        const resRuta = await fetch('/api/routes', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ nombre: nuevaRutaNombre.trim(), asesor_nombre: 'Por asignar' }),
+        });
+        const jsonRuta = (await resRuta.json()) as { data?: Ruta; error?: string };
+        if (!jsonRuta.data) {
+          alert(`No se pudo crear la ruta: ${jsonRuta.error ?? 'error desconocido'}`);
+          setGuardando(false);
+          return;
+        }
+        ruta_id = jsonRuta.data.id;
+        setRutas((prev) => [...prev, jsonRuta.data!].sort((a, b) => a.nombre.localeCompare(b.nombre)));
+      }
+
       await fetch(`/api/clients?id=${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...valoresEdicion, ruta_id: valoresEdicion.ruta_id || null }),
+        body: JSON.stringify({ ...valoresEdicion, ruta_id }),
       });
       setEditandoId(null);
+      setNuevaRutaNombre('');
       await cargar();
     } finally {
       setGuardando(false);
@@ -404,7 +432,17 @@ export default function ClientsPage() {
                     {rutas.map((r) => (
                       <option key={r.id} value={r.id}>{r.nombre}</option>
                     ))}
+                    <option value={CREAR_NUEVA_RUTA}>+ Crear nueva ruta</option>
                   </select>
+                  {valoresEdicion.ruta_id === CREAR_NUEVA_RUTA && (
+                    <input
+                      type="text"
+                      placeholder="Nombre de la nueva ruta (ej: Ruta 99)"
+                      className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm mt-2"
+                      value={nuevaRutaNombre}
+                      onChange={(e) => setNuevaRutaNombre(e.target.value)}
+                    />
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <input
@@ -423,7 +461,7 @@ export default function ClientsPage() {
                     {guardando ? 'Guardando…' : 'Guardar'}
                   </button>
                   <button
-                    onClick={() => setEditandoId(null)}
+                    onClick={() => { setEditandoId(null); setNuevaRutaNombre(''); }}
                     className="border border-gray-300 text-gray-600 px-4 py-1.5 rounded-lg text-sm"
                   >
                     Cancelar
