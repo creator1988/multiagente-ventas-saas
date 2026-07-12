@@ -171,6 +171,77 @@ export async function enviarImagen(
   });
 }
 
+// ============================================================
+// BROADCASTS (Platform API) — distinta de la Meta Proxy API de arriba:
+// otra base URL, mismo header X-API-Key. Referencia: docs.kapso.ai/api/platform/v1/broadcasts
+// ============================================================
+async function kapsoBroadcastRequest(path: string, method: string, body?: unknown): Promise<unknown> {
+  const { apiKey } = getCredentials();
+  const url = `https://api.kapso.ai/platform/v1/whatsapp/broadcasts${path}`;
+
+  const response = await fetch(url, {
+    method,
+    headers: {
+      'Content-Type': 'application/json',
+      'X-API-Key': apiKey,
+    },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
+
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(`Kapso Broadcast API error ${response.status}: ${error}`);
+  }
+
+  return response.json();
+}
+
+export async function crearBroadcast(nombre: string, whatsappTemplateId: string): Promise<{ id: string }> {
+  const { phoneNumberId } = getCredentials();
+  const json = (await kapsoBroadcastRequest('', 'POST', {
+    whatsapp_broadcast: {
+      name: nombre,
+      phone_number_id: phoneNumberId,
+      whatsapp_template_id: whatsappTemplateId,
+    },
+  })) as { data: { id: string } };
+  return { id: json.data.id };
+}
+
+// Cada destinatario lleva sus 7 valores en el mismo orden que las variables
+// {{1}}..{{7}} de la plantilla. parameter_name se asume posicional ("1".."7")
+// porque la plantilla fue creada con placeholders numerados de Meta, no con
+// nombres personalizados — si en Kapso la plantilla usa parameter_name
+// distintos, ajustar aquí.
+export async function agregarDestinatariosBroadcast(
+  broadcastId: string,
+  destinatarios: Array<{ phone_number: string; parametros: string[] }>
+): Promise<{ added: number; duplicates: number; errors: string[] }> {
+  const json = (await kapsoBroadcastRequest(`/${broadcastId}/recipients`, 'POST', {
+    whatsapp_broadcast: {
+      recipients: destinatarios.map((d) => ({
+        phone_number: d.phone_number,
+        components: [
+          {
+            type: 'body',
+            parameters: d.parametros.map((valor, i) => ({
+              type: 'text',
+              parameter_name: String(i + 1),
+              text: valor,
+            })),
+          },
+        ],
+      })),
+    },
+  })) as { data: { added: number; duplicates: number; errors: string[] } };
+  return json.data;
+}
+
+export async function enviarBroadcast(broadcastId: string): Promise<{ status: string }> {
+  const json = (await kapsoBroadcastRequest(`/${broadcastId}/send`, 'POST')) as { data: { status: string } };
+  return { status: json.data.status };
+}
+
 export async function descargarMedia(mediaId: string, phoneNumberIdOverride?: string): Promise<Buffer> {
   const { apiKey, phoneNumberId: phoneNumberIdDefault } = getCredentials();
   const phoneNumberId = phoneNumberIdOverride ?? phoneNumberIdDefault;

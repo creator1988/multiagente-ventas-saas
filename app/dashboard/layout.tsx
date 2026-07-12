@@ -6,6 +6,7 @@ const NAV_ITEMS = [
   { href: '/dashboard/catalog', label: 'Catálogo' },
   { href: '/dashboard/clients', label: 'Clientes' },
   { href: '/dashboard/routes', label: 'Rutas' },
+  { href: '/dashboard/broadcasts', label: 'Transmisiones' },
   { href: '/dashboard/monitor', label: 'Monitor ISA' },
   { href: '/dashboard/reports', label: 'Reportes' },
 ];
