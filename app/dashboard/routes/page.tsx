@@ -21,6 +21,99 @@ const VALORES_VACIOS: ValoresRuta = {
   zona_cobertura: '',
 };
 
+// Definido fuera de RoutesPage a propósito: si estuviera anidado dentro del
+// componente, cada re-render del padre (cada setValores, es decir cada tecla)
+// crearía una nueva referencia de función para este componente. React la
+// trataría como un tipo distinto al anterior y desmontaría/remontaría todo
+// su árbol — incluyendo el <input> del DOM — perdiendo el foco en cada letra.
+function FormularioRuta({
+  valores,
+  onChange,
+  onGuardar,
+  onCancelar,
+  guardando,
+}: {
+  valores: ValoresRuta;
+  onChange: (valores: ValoresRuta) => void;
+  onGuardar: () => void;
+  onCancelar: () => void;
+  guardando: boolean;
+}) {
+  return (
+    <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
+      <div className="grid grid-cols-2 gap-3 mb-3">
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Nombre (ej: Ruta 44)</label>
+          <input
+            type="text"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+            value={valores.nombre}
+            onChange={(e) => onChange({ ...valores, nombre: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Nombre del asesor</label>
+          <input
+            type="text"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+            value={valores.asesor_nombre}
+            onChange={(e) => onChange({ ...valores, asesor_nombre: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Teléfono del asesor</label>
+          <input
+            type="text"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+            value={valores.asesor_telefono}
+            onChange={(e) => onChange({ ...valores, asesor_telefono: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">WhatsApp del asesor</label>
+          <input
+            type="text"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+            value={valores.asesor_whatsapp}
+            onChange={(e) => onChange({ ...valores, asesor_whatsapp: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Días de visita</label>
+          <input
+            type="text"
+            placeholder="Ej: Lunes y jueves"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+            value={valores.dias_visita}
+            onChange={(e) => onChange({ ...valores, dias_visita: e.target.value })}
+          />
+        </div>
+        <div>
+          <label className="text-xs text-gray-500 block mb-1">Zona de cobertura</label>
+          <input
+            type="text"
+            className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+            value={valores.zona_cobertura}
+            onChange={(e) => onChange({ ...valores, zona_cobertura: e.target.value })}
+          />
+        </div>
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={onGuardar}
+          disabled={guardando || !valores.nombre.trim()}
+          className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-sm font-medium"
+        >
+          {guardando ? 'Guardando…' : 'Guardar'}
+        </button>
+        <button onClick={onCancelar} className="border border-gray-300 text-gray-600 px-4 py-1.5 rounded-lg text-sm">
+          Cancelar
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function RoutesPage() {
   const [rutas, setRutas] = useState<RutaConClientes[]>([]);
   const [loading, setLoading] = useState(true);
@@ -129,82 +222,6 @@ export default function RoutesPage() {
     }
   }
 
-  function FormularioRuta({ onGuardar, onCancelar }: { onGuardar: () => void; onCancelar: () => void }) {
-    return (
-      <div className="bg-white border border-gray-200 rounded-lg p-4 mb-4">
-        <div className="grid grid-cols-2 gap-3 mb-3">
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Nombre (ej: Ruta 44)</label>
-            <input
-              type="text"
-              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-              value={valores.nombre}
-              onChange={(e) => setValores((v) => ({ ...v, nombre: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Nombre del asesor</label>
-            <input
-              type="text"
-              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-              value={valores.asesor_nombre}
-              onChange={(e) => setValores((v) => ({ ...v, asesor_nombre: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Teléfono del asesor</label>
-            <input
-              type="text"
-              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-              value={valores.asesor_telefono}
-              onChange={(e) => setValores((v) => ({ ...v, asesor_telefono: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">WhatsApp del asesor</label>
-            <input
-              type="text"
-              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-              value={valores.asesor_whatsapp}
-              onChange={(e) => setValores((v) => ({ ...v, asesor_whatsapp: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Días de visita</label>
-            <input
-              type="text"
-              placeholder="Ej: Lunes y jueves"
-              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-              value={valores.dias_visita}
-              onChange={(e) => setValores((v) => ({ ...v, dias_visita: e.target.value }))}
-            />
-          </div>
-          <div>
-            <label className="text-xs text-gray-500 block mb-1">Zona de cobertura</label>
-            <input
-              type="text"
-              className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
-              value={valores.zona_cobertura}
-              onChange={(e) => setValores((v) => ({ ...v, zona_cobertura: e.target.value }))}
-            />
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onGuardar}
-            disabled={guardando || !valores.nombre.trim()}
-            className="bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white px-4 py-1.5 rounded-lg text-sm font-medium"
-          >
-            {guardando ? 'Guardando…' : 'Guardar'}
-          </button>
-          <button onClick={onCancelar} className="border border-gray-300 text-gray-600 px-4 py-1.5 rounded-lg text-sm">
-            Cancelar
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="p-6 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-6">
@@ -218,7 +235,13 @@ export default function RoutesPage() {
       </div>
 
       {mostrarForm && (
-        <FormularioRuta onGuardar={crearRuta} onCancelar={() => setMostrarForm(false)} />
+        <FormularioRuta
+          valores={valores}
+          onChange={setValores}
+          onGuardar={crearRuta}
+          onCancelar={() => setMostrarForm(false)}
+          guardando={guardando}
+        />
       )}
 
       {loading && <p className="text-gray-500">Cargando...</p>}
@@ -274,7 +297,13 @@ export default function RoutesPage() {
 
               {editandoId === r.id && (
                 <div className="mt-4 pt-4 border-t border-gray-200">
-                  <FormularioRuta onGuardar={() => guardarEdicion(r.id)} onCancelar={() => setEditandoId(null)} />
+                  <FormularioRuta
+                    valores={valores}
+                    onChange={setValores}
+                    onGuardar={() => guardarEdicion(r.id)}
+                    onCancelar={() => setEditandoId(null)}
+                    guardando={guardando}
+                  />
                 </div>
               )}
 
