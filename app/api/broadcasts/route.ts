@@ -44,6 +44,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   const body = (await request.json()) as { empresa_id?: string; ruta_ids: string[] };
   const empresa_id = body.empresa_id ?? EMPRESA_ID;
 
+  console.log('[broadcasts] rutas_ids:', body.ruta_ids);
+
   if (!Array.isArray(body.ruta_ids) || body.ruta_ids.length === 0) {
     return NextResponse.json({ error: 'ruta_ids requerido' }, { status: 400 });
   }
@@ -62,6 +64,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         AND activo = true
         AND ruta_id = ANY(${body.ruta_ids}::uuid[])
     `;
+
+    console.log('[broadcasts] clientes encontrados:', clientesRows.length);
 
     if (clientesRows.length === 0) {
       return NextResponse.json({ error: 'No hay clientes activos en las rutas seleccionadas' }, { status: 422 });
@@ -87,6 +91,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       nombre: o.nombre as string,
       precio: `$${Number(o.precio_combo).toLocaleString('es-CO')}`,
     }));
+
+    console.log('[broadcasts] ofertas seleccionadas:', ofertas.map((o) => o.nombre));
 
     const destinatarios = clientesRows.map((c) => {
       const whatsapp = c.whatsapp as string;
@@ -131,6 +137,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       },
     });
   } catch (error) {
+    const err = error as Error;
+    console.log('[broadcasts] ERROR:', err.message, JSON.stringify(error, Object.getOwnPropertyNames(error)));
     console.error('[broadcasts POST]', error);
     return NextResponse.json({ error: 'Error enviando transmisión', detalle: String(error) }, { status: 500 });
   }
