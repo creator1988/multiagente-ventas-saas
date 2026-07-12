@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { sql } from '@/lib/db';
+import { sql, getSql } from '@/lib/db';
 import { registrarPedido } from '@/lib/query-cards';
 import { notificarPedidoNuevo } from '@/lib/resend';
+import { nombreClienteVisible } from '@/lib/cliente-nombre';
 import { z } from 'zod';
 
 const EMPRESA_ID = process.env.EMPRESA_ID_DEFAULT ?? '';
@@ -21,6 +22,12 @@ const PedidoSchema = z.object({
   notas: z.string().optional(),
 });
 
+// Nombre visible del cliente en SQL: NULLIF trata el placeholder de
+// onboarding 'Cliente nuevo' como si fuera NULL, para que el COALESCE caiga
+// a nombre_contacto en vez de mostrar el placeholder (mismo bug que en
+// lib/cliente-nombre.ts, aquí en su forma SQL).
+const CLIENTE_NOMBRE_SQL = `COALESCE(NULLIF(c.nombre_negocio, 'Cliente nuevo'), c.nombre_contacto)`;
+
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const { searchParams } = new URL(request.url);
   const empresa_id = searchParams.get('empresa_id') ?? EMPRESA_ID;
@@ -28,6 +35,10 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
   const estado = searchParams.get('estado');
   const cliente_id = searchParams.get('cliente_id');
   const fecha = searchParams.get('fecha'); // YYYY-MM-DD
+  const historial = searchParams.get('historial') === 'true';
+  const desde = searchParams.get('desde'); // YYYY-MM-DD
+  const hasta = searchParams.get('hasta'); // YYYY-MM-DD
+  const buscar = searchParams.get('buscar');
 
   try {
     // Detalle de un pedido puntual: cabecera + items (JOIN pedidos + clientes,
@@ -37,7 +48,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
         SELECT
           p.id AS pedido_id,
           p.numero_pedido,
-          COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre,
+          COALESCE(NULLIF(c.nombre_negocio, 'Cliente nuevo'), c.nombre_contacto) AS cliente_nombre,
           c.whatsapp AS whatsapp,
           p.estado,
           p.total,
@@ -63,13 +74,77 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       return NextResponse.json({ data: { ...cabeceraRows[0], items: itemsRows } });
     }
 
+    // Historial completo con filtros combinables + paginación. Usa .query()
+    // con placeholders numerados porque el número de condiciones es
+    // dinámico — la plantilla `sql` tagged no permite componer WHERE
+    // clauses condicionalmente en tiempo de ejecución.
+    if (historial) {
+      const condiciones: string[] = ['p.empresa_id = $1'];
+      const valores: unknown[] = [empresa_id];
+
+      if (desde) {
+        valores.push(desde);
+        condiciones.push(`p.creado_at::date >= $${valores.length}`);
+      }
+      if (hasta) {
+        valores.push(hasta);
+        condiciones.push(`p.creado_at::date <= $${valores.length}`);
+      }
+      if (estado) {
+        valores.push(estado);
+        condiciones.push(`p.estado = $${valores.length}`);
+      }
+      if (buscar) {
+        valores.push(`%${buscar}%`);
+        const idx = valores.length;
+        condiciones.push(`(c.nombre_negocio ILIKE $${idx} OR c.nombre_contacto ILIKE $${idx} OR c.whatsapp ILIKE $${idx})`);
+      }
+
+      const whereClause = condiciones.join(' AND ');
+
+      const totalRows = await getSql().query(
+        `SELECT COUNT(*) AS total FROM pedidos p JOIN clientes c ON c.id = p.cliente_id WHERE ${whereClause}`,
+        valores
+      );
+      const total = Number((totalRows[0] as { total: string })?.total ?? 0);
+
+      const pagina = Math.max(parseInt(searchParams.get('pagina') ?? '1', 10) || 1, 1);
+      const limite = Math.min(Math.max(parseInt(searchParams.get('limite') ?? '20', 10) || 20, 1), 100);
+      const offset = (pagina - 1) * limite;
+
+      const valoresConPaginacion = [...valores, limite, offset];
+      const limitIdx = valoresConPaginacion.length - 1;
+      const offsetIdx = valoresConPaginacion.length;
+
+      const dataRows = await getSql().query(
+        `SELECT
+           p.id AS pedido_id,
+           ${CLIENTE_NOMBRE_SQL} AS cliente_nombre,
+           c.whatsapp AS whatsapp,
+           p.estado,
+           p.total,
+           p.creado_at AS created_at,
+           COUNT(pi.id) AS items_count
+         FROM pedidos p
+         JOIN clientes c ON c.id = p.cliente_id
+         LEFT JOIN pedido_items pi ON pi.pedido_id = p.id
+         WHERE ${whereClause}
+         GROUP BY p.id, c.nombre_negocio, c.nombre_contacto, c.whatsapp
+         ORDER BY p.creado_at DESC
+         LIMIT $${limitIdx} OFFSET $${offsetIdx}`,
+        valoresConPaginacion
+      );
+
+      return NextResponse.json({ data: dataRows, total, pagina, limite });
+    }
+
     let rows;
 
     if (fecha) {
       rows = await sql`
         SELECT
           p.id AS pedido_id,
-          COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre,
+          COALESCE(NULLIF(c.nombre_negocio, 'Cliente nuevo'), c.nombre_contacto) AS cliente_nombre,
           c.whatsapp AS whatsapp,
           p.estado,
           p.total,
@@ -85,7 +160,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       `;
     } else if (cliente_id) {
       rows = await sql`
-        SELECT p.*, COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre
+        SELECT p.*, COALESCE(NULLIF(c.nombre_negocio, 'Cliente nuevo'), c.nombre_contacto) AS cliente_nombre
         FROM pedidos p
         JOIN clientes c ON c.id = p.cliente_id
         WHERE p.empresa_id = ${empresa_id}
@@ -95,7 +170,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       `;
     } else if (estado) {
       rows = await sql`
-        SELECT p.*, COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre
+        SELECT p.*, COALESCE(NULLIF(c.nombre_negocio, 'Cliente nuevo'), c.nombre_contacto) AS cliente_nombre
         FROM pedidos p
         JOIN clientes c ON c.id = p.cliente_id
         WHERE p.empresa_id = ${empresa_id}
@@ -105,7 +180,7 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
       `;
     } else {
       rows = await sql`
-        SELECT p.*, COALESCE(c.nombre_negocio, c.nombre_contacto) AS cliente_nombre
+        SELECT p.*, COALESCE(NULLIF(c.nombre_negocio, 'Cliente nuevo'), c.nombre_contacto) AS cliente_nombre
         FROM pedidos p
         JOIN clientes c ON c.id = p.cliente_id
         WHERE p.empresa_id = ${empresa_id}
@@ -161,7 +236,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     if (process.env.ASESOR_EMAIL && cliente) {
       await notificarPedidoNuevo({
         asesor_email: process.env.ASESOR_EMAIL,
-        cliente_nombre: cliente.nombre_negocio ?? cliente.nombre_contacto ?? 'Cliente',
+        cliente_nombre: nombreClienteVisible(cliente) ?? 'Cliente',
         pedido_id: result.data!.pedido_id,
         total: result.data!.total,
         items: productosRows.map((r) => ({

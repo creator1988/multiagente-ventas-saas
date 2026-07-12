@@ -21,6 +21,7 @@ import { getCached, setCached } from './cache';
 import { enviarTexto, enviarListMessage, enviarReplyButtons, enviarProductoConBoton, enviarOfertaConBoton } from './kapso';
 import { notificarPedidoNuevo, notificarPedidoFallido } from './resend';
 import { calcularIsaScore } from './monitor';
+import { nombreClienteVisible } from './cliente-nombre';
 import { sql } from './db';
 
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -254,7 +255,7 @@ async function mostrarCategorias(
     return;
   }
 
-  const nombre = cliente?.nombre_negocio ?? cliente?.nombre_contacto;
+  const nombre = nombreClienteVisible(cliente);
   let saludo: string;
   if (nombre && cliente?.fecha_ultimo_pedido) {
     const fecha = new Date(cliente.fecha_ultimo_pedido).toLocaleDateString('es-CO', {
@@ -1133,10 +1134,17 @@ async function capturarDireccionCliente(
   await enviarTexto(whatsapp, msg);
   await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
 
+  // No hay un paso dedicado para el barrio — el prompt pide "calle, número,
+  // barrio" en un solo mensaje. Best-effort: si el cliente separó con comas,
+  // el barrio suele ser el último segmento; si no, queda vacío en vez de
+  // asumir mal el texto completo.
+  const partesDireccion = direccion.split(',').map(p => p.trim()).filter(Boolean);
+  const barrio = partesDireccion.length > 1 ? partesDireccion[partesDireccion.length - 1] : '';
+
   await setEstadoFlujo(empresa_id, conversacion_id, {
     ...estado,
     etapa: 'esperando_telefono_confirmacion',
-    datos_cliente_temp: { ...estado.datos_cliente_temp, direccion },
+    datos_cliente_temp: { ...estado.datos_cliente_temp, direccion, barrio },
   });
 }
 
@@ -1166,12 +1174,20 @@ async function capturarTelefonoCliente(
     return;
   }
 
-  const nombre = estado.datos_cliente_temp?.nombre ?? cliente.nombre_contacto ?? '';
+  const nombre = estado.datos_cliente_temp?.nombre ?? nombreClienteVisible(cliente) ?? '';
   const direccion = estado.datos_cliente_temp?.direccion ?? '';
+  const barrio = estado.datos_cliente_temp?.barrio ?? '';
 
-  await actualizarDatosCliente(cliente.id, { nombre_contacto: nombre, direccion, telefono });
+  await actualizarDatosCliente(cliente.id, { nombre, direccion, telefono, barrio });
 
-  const clienteActualizado: Cliente = { ...cliente, nombre_contacto: nombre, direccion, telefono };
+  const clienteActualizado: Cliente = {
+    ...cliente,
+    nombre_negocio: nombre,
+    nombre_contacto: nombre,
+    direccion,
+    barrio,
+    telefono,
+  };
   const nuevoEstado: EstadoFlujo = { ...estado, etapa: 'inicio', datos_cliente_temp: undefined };
   await setEstadoFlujo(empresa_id, conversacion_id, nuevoEstado);
 
@@ -1251,7 +1267,7 @@ async function registrarPedidoFinal(
     console.error('[agent-core] registrarPedidoFinal error:', error);
 
     if (process.env.ASESOR_EMAIL) {
-      const clienteNombre = cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp;
+      const clienteNombre = nombreClienteVisible(cliente) ?? whatsapp;
       await notificarPedidoFallido({
         asesor_email: process.env.ASESOR_EMAIL,
         cliente_nombre: clienteNombre,
@@ -1285,7 +1301,7 @@ async function registrarPedidoFinal(
   await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
 
   if (process.env.ASESOR_EMAIL) {
-    const clienteNombre = cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp;
+    const clienteNombre = nombreClienteVisible(cliente) ?? whatsapp;
     notificarPedidoNuevo({
       asesor_email: process.env.ASESOR_EMAIL,
       cliente_nombre: clienteNombre,
@@ -1414,7 +1430,7 @@ async function procesarConIA(
 
   const systemPrompt = buildSystemPrompt({
     empresa_nombre,
-    cliente_nombre: cliente?.nombre_negocio ?? cliente?.nombre_contacto,
+    cliente_nombre: nombreClienteVisible(cliente) ?? undefined,
     fecha_hoy: new Date().toLocaleDateString('es-CO', {
       weekday: 'long',
       year: 'numeric',

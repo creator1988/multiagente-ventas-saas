@@ -460,16 +460,22 @@ export async function actualizarUltimoPedido(cliente_id: string): Promise<void> 
 
 // ============================================================
 // ACTUALIZAR DATOS DE CLIENTE (nombre, dirección, teléfono) — cliente nuevo/incompleto
+// Guarda el nombre en nombre_negocio Y nombre_contacto: antes solo se
+// actualizaba nombre_contacto, dejando nombre_negocio congelado en el
+// placeholder 'Cliente nuevo' (crearClienteTemporal) para siempre — eso
+// filtraba a saludos, emails y logs vía el patrón nombre_negocio ?? nombre_contacto.
 // ============================================================
 export async function actualizarDatosCliente(
   cliente_id: string,
-  datos: { nombre_contacto: string; direccion: string; telefono: string }
+  datos: { nombre: string; direccion: string; telefono: string; barrio?: string }
 ): Promise<QueryCardResult<null>> {
   try {
     await sql`
       UPDATE clientes
-      SET nombre_contacto = ${datos.nombre_contacto},
+      SET nombre_negocio = ${datos.nombre},
+          nombre_contacto = ${datos.nombre},
           direccion = ${datos.direccion},
+          barrio = ${datos.barrio ?? null},
           telefono = ${datos.telefono}
       WHERE id = ${cliente_id}
     `;

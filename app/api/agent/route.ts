@@ -3,6 +3,7 @@ import { completarConClaude } from '@/lib/claude';
 import { buildSystemPrompt } from '@/lib/agent-prompt';
 import { identificarCliente } from '@/lib/query-cards';
 import { getCached, setCached } from '@/lib/cache';
+import { nombreClienteVisible } from '@/lib/cliente-nombre';
 
 const EMPRESA_ID = process.env.EMPRESA_ID_DEFAULT ?? '';
 
@@ -28,7 +29,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const systemPrompt = buildSystemPrompt({
     empresa_nombre: 'Distrisanty',
-    cliente_nombre: cliente?.nombre_negocio ?? cliente?.nombre_contacto,
+    cliente_nombre: nombreClienteVisible(cliente) ?? undefined,
     fecha_hoy: new Date().toLocaleDateString('es-CO'),
   });
 

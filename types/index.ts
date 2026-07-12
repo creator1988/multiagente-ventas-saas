@@ -454,6 +454,7 @@ export interface EstadoFlujo {
   datos_cliente_temp?: {
     nombre?: string;
     direccion?: string;
+    barrio?: string;
   };
   carrito: CartItem[];
   last_categoria_id?: string;

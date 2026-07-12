@@ -17,6 +17,7 @@ import { descargarMedia } from '@/lib/kapso';
 import { transcribirAudio } from '@/lib/gemini';
 import { notificarEscalado } from '@/lib/resend';
 import { getCached, setCached } from '@/lib/cache';
+import { nombreClienteVisible } from '@/lib/cliente-nombre';
 import { sql } from '@/lib/db';
 
 const EMPRESA_ID = process.env.EMPRESA_ID_DEFAULT ?? '';
@@ -220,7 +221,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           return;
         }
 
-        console.log(`[kapso-webhook] Tendero: ${cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp}`);
+        console.log(`[kapso-webhook] Tendero: ${nombreClienteVisible(cliente) ?? whatsapp}`);
 
         // 3. Obtener o crear conversación activa
         const conversacion_id = await obtenerOCrearConversacion(empresa_id, cliente.id);
@@ -274,7 +275,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
           if (process.env.ASESOR_EMAIL) {
             await notificarEscalado({
               asesor_email: process.env.ASESOR_EMAIL,
-              cliente_nombre: cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp,
+              cliente_nombre: nombreClienteVisible(cliente) ?? whatsapp,
               whatsapp: whatsappRaw,
               motivo: 'Error en el agente IA — requiere atención manual',
               conversacion_id,

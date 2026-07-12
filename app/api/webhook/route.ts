@@ -15,6 +15,7 @@ import { transcribirAudio, } from '@/lib/gemini';
 import { descargarMedia, enviarTexto } from '@/lib/kapso';
 import { notificarEscalado } from '@/lib/resend';
 import { GROQ_SALUDO_PROMPT } from '@/lib/agent-prompt';
+import { nombreClienteVisible } from '@/lib/cliente-nombre';
 
 // Empresa por defecto (multi-tenant: en producción vendrá del token Kapso)
 const EMPRESA_ID = process.env.EMPRESA_ID_DEFAULT ?? '';
@@ -155,7 +156,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       if (cliente && process.env.ASESOR_EMAIL) {
         await notificarEscalado({
           asesor_email: process.env.ASESOR_EMAIL,
-          cliente_nombre: cliente.nombre_negocio ?? cliente.nombre_contacto ?? whatsapp,
+          cliente_nombre: nombreClienteVisible(cliente) ?? whatsapp,
           whatsapp,
           motivo: 'Error en el agente IA — requiere atención manual',
           conversacion_id,
