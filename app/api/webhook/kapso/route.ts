@@ -63,6 +63,13 @@ async function extraerTexto(item: KapsoV2Item): Promise<string> {
     );
   }
 
+  // Botón de respuesta rápida de una PLANTILLA (broadcast, ej. distrisanty_oferta_diaria):
+  // Meta lo entrega como type: 'button' — no como 'interactive' — con el texto literal
+  // del botón (ej. "Ver ofertas especiales"), no un ID estructurado.
+  if (tipo === 'button') {
+    return item.message?.button?.text ?? item.message?.button?.payload ?? '';
+  }
+
   if (tipo === 'audio') {
     console.log('[audio] tipo de mensaje recibido:', tipo);
     console.log('[audio] Payload completo del mensaje:', JSON.stringify(item.message));
@@ -237,6 +244,8 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
               ? '[audio transcrito]'
               : tipo === 'interactive'
               ? (item.message?.interactive?.list_reply?.id ?? item.message?.interactive?.button_reply?.id ?? '')
+              : tipo === 'button'
+              ? (item.message?.button?.text ?? item.message?.button?.payload ?? '')
               : (item.message?.text?.body ?? '');
           if (!textoItem) continue;
           await guardarMensaje({

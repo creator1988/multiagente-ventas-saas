@@ -296,6 +296,13 @@ export async function guardarMensaje(params: {
       ${params.tipo ?? 'texto'}
     )
   `;
+  // Sin esto, conversaciones.ultimo_mensaje nunca se actualiza tras la creación
+  // de la fila: el monitor (ORDER BY ultimo_mensaje DESC) deja de reflejar
+  // actividad reciente y, en bases con más filas que el LIMIT, puede
+  // directamente omitir conversaciones activas.
+  await sql`
+    UPDATE conversaciones SET ultimo_mensaje = NOW() WHERE id = ${params.conversacion_id}
+  `;
 }
 
 // ============================================================

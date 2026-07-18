@@ -95,7 +95,6 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     await enviarTexto(rows[0].whatsapp as string, mensaje.trim());
     await guardarMensaje({ conversacion_id: id, rol: 'agente', contenido: mensaje.trim(), tipo: 'texto' });
-    await sql`UPDATE conversaciones SET ultimo_mensaje = now() WHERE id = ${id}`;
 
     return NextResponse.json({ data: { ok: true } });
   } catch (error) {

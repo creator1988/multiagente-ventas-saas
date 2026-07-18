@@ -282,12 +282,16 @@ export interface KapsoV2Item {
     id: string;
     text?: { body: string };
     audio?: { url: string; id?: string; mime_type?: string };
-    type: 'text' | 'audio' | 'image' | 'interactive';
+    type: 'text' | 'audio' | 'image' | 'interactive' | 'button';
     interactive?: {
       type: 'list_reply' | 'button_reply';
       list_reply?: { id: string; title: string };
       button_reply?: { id: string; title: string };
     };
+    // Respuesta a un botón de respuesta rápida de una PLANTILLA (broadcast),
+    // distinto de 'interactive': Meta lo entrega como type: 'button' con el
+    // texto literal del botón, no como un ID estructurado que definamos nosotros.
+    button?: { text: string; payload?: string };
     kapso?: {
       transcript?: { text: string };
     };

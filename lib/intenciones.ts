@@ -58,6 +58,13 @@ const SKIP_EN_LOOP: Intencion[] = [
 ];
 
 export function clasificarIntencion(texto: string): Intencion {
+  // Botones de respuesta rápida de PLANTILLAS de WhatsApp (broadcasts, ej.
+  // distrisanty_oferta_diaria): el texto que regresa es el título literal del
+  // botón, no un ID estructurado — se comparan exactos y con prioridad absoluta.
+  const textoPlano = texto.trim().toLowerCase();
+  if (textoPlano === 'ver ofertas especiales')          return 'ver_ofertas';
+  if (textoPlano === 'hacer un pedido')                 return 'catalogo';
+
   // IDs de botones/listas — tienen prioridad absoluta sobre regex
   if (texto.startsWith('cat_'))                        return 'categoria_seleccionada';
   if (texto.startsWith('addoferta_'))                  return 'agregar_pedido';
