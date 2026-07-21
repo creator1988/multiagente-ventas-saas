@@ -131,8 +131,21 @@ export async function DELETE(request: NextRequest): Promise<NextResponse> {
     await sql`DELETE FROM clientes WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
     return NextResponse.json({ ok: true });
   } catch (error) {
+    // 23503 = foreign_key_violation: el cliente tiene pedidos asociados,
+    // no se puede borrar físicamente sin romper el historial. Se desactiva
+    // en su lugar (soft delete) para que siga apareciendo en pedidos pasados.
+    if ((error as { code?: string })?.code === '23503') {
+      try {
+        await sql`UPDATE clientes SET activo = false WHERE id = ${cliente_id} AND empresa_id = ${empresa_id}`;
+        return NextResponse.json({ ok: true, soft: true });
+      } catch (fallbackError) {
+        console.error('[clients DELETE fallback]', fallbackError);
+        return NextResponse.json({ error: 'Error desactivando cliente', detalle: String(fallbackError) }, { status: 500 });
+      }
+    }
+
     console.error('[clients DELETE]', error);
-    return NextResponse.json({ error: 'Error eliminando cliente (puede tener pedidos asociados)', detalle: String(error) }, { status: 500 });
+    return NextResponse.json({ error: 'Error eliminando cliente', detalle: String(error) }, { status: 500 });
   }
 }
 
@@ -165,7 +178,17 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         await sql`UPDATE clientes SET activo = true WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])`;
         break;
       case 'eliminar':
-        await sql`DELETE FROM clientes WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])`;
+        try {
+          await sql`DELETE FROM clientes WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])`;
+        } catch (deleteError) {
+          // 23503 = foreign_key_violation: alguno de los clientes tiene pedidos
+          // asociados; se desactivan en lugar de borrarlos para no romper el historial.
+          if ((deleteError as { code?: string })?.code === '23503') {
+            await sql`UPDATE clientes SET activo = false WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])`;
+          } else {
+            throw deleteError;
+          }
+        }
         break;
       case 'asignar_ruta':
         await sql`UPDATE clientes SET ruta_id = ${body.ruta_id ?? null} WHERE empresa_id = ${empresa_id} AND id = ANY(${body.ids}::uuid[])`;
