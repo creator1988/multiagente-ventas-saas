@@ -158,34 +158,48 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
     console.log(`[kapso-webhook] Mensajes recibidos: ${items.length}`);
 
-    // Agrupar por conversation.id para unir mensajes del mismo tendero en la ventana de buffering
+    // Agrupar por número de WhatsApp (no por conversation.id de Kapso) para unir
+    // mensajes del mismo tendero en la ventana de buffering. conversation.id no es
+    // confiable como clave: en un broadcast masivo, si Kapso no garantiza que sea
+    // único por cliente, mensajes de clientes DISTINTOS terminan agrupados bajo el
+    // mismo id y se atribuyen todos al primer whatsapp que creó el grupo — esto
+    // hacía que 100+ respuestas colapsaran en un puñado de conversaciones.
     const grupos = new Map<string, { items: KapsoV2Item[]; whatsapp: string }>();
     for (const item of items) {
-      const convId = item.conversation?.id ?? item.message?.from;
       const whatsapp = item.message?.from;
-      if (!convId || !whatsapp) continue;
-      if (!grupos.has(convId)) {
-        grupos.set(convId, { items: [], whatsapp });
+      if (!whatsapp) {
+        console.error('[kapso-webhook] Item sin message.from, se descarta:', JSON.stringify(item));
+        continue;
       }
-      grupos.get(convId)!.items.push(item);
+      if (!grupos.has(whatsapp)) {
+        grupos.set(whatsapp, { items: [], whatsapp });
+      }
+      grupos.get(whatsapp)!.items.push(item);
     }
 
     const resultados = await Promise.allSettled(
-      Array.from(grupos.entries()).map(async ([kapsoConvId, grupo]) => {
+      Array.from(grupos.entries()).map(async ([whatsappKey, grupo]) => {
         const whatsappRaw = grupo.whatsapp;
         const whatsapp = normalizarWhatsapp(whatsappRaw);
+        console.log('[webhook] número recibido:', whatsapp);
 
         const textos = await Promise.all(grupo.items.map(extraerTexto));
         const textoUsuario = textos.filter(Boolean).join(' / ');
 
-        if (!textoUsuario.trim()) return;
+        if (!textoUsuario.trim()) {
+          console.error(`[kapso-webhook] Texto vacío tras extraerTexto, se descarta whatsapp="${whatsapp}" tipos=${grupo.items.map((i) => i.message?.type).join(',')}`);
+          return;
+        }
 
         const empresa_id = EMPRESA_ID;
         console.log(`[kapso-webhook] empresa_id="${empresa_id}" whatsapp="${whatsapp}" texto="${textoUsuario}"`);
 
         // 1. Buscar tendero en clientes por número WhatsApp
-        const { data: cliente } = await identificarCliente(empresa_id, whatsapp);
-        console.log(`[kapso-webhook] Cliente encontrado: ${cliente ? cliente.id : 'NO'}`);
+        const { data: cliente, error: errIdentificar } = await identificarCliente(empresa_id, whatsapp);
+        if (errIdentificar) {
+          console.error(`[kapso-webhook] Error identificando cliente para whatsapp="${whatsapp}":`, errIdentificar);
+        }
+        console.log('[webhook] cliente encontrado/creado:', cliente ? cliente.id : 'NO');
 
         // 1.5 Cliente existe pero está marcado como inactivo (solicitó no-contacto):
         // no seguir el flujo normal. "ACTIVAR" lo reactiva; cualquier otro mensaje
@@ -221,7 +235,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             console.error(`[kapso-webhook] Error creando cliente temporal:`, errCliente);
             return;
           }
+          console.log('[webhook] cliente encontrado/creado:', nuevo.id);
           const conv_id = await obtenerOCrearConversacion(empresa_id, nuevo.id);
+          console.log('[webhook] conversación id:', conv_id);
           await guardarMensaje({ conversacion_id: conv_id, rol: 'cliente', contenido: textoUsuario });
           await procesarNuevoCliente(empresa_id, nuevo, whatsappRaw, conv_id);
           console.log(`[kapso-webhook] Bienvenida con categorías enviada a: ${whatsapp}`);
@@ -232,7 +248,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
         // 3. Obtener o crear conversación activa
         const conversacion_id = await obtenerOCrearConversacion(empresa_id, cliente.id);
-        console.log(`[kapso-webhook] Conversación: ${conversacion_id}`);
+        console.log('[webhook] conversación id:', conversacion_id);
 
         // 4. Guardar mensajes entrantes en tabla mensajes
         for (const item of grupo.items) {
@@ -272,7 +288,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
             intencion,
             historial,
           });
-          console.log(`[kapso-webhook] Conversación respondida: ${kapsoConvId}`);
+          console.log(`[kapso-webhook] Conversación respondida: ${whatsappKey}`);
         } catch (claudeError) {
           console.error(`[kapso-webhook] Error Claude, Groq fallback:`, claudeError);
 
