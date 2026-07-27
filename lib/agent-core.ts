@@ -70,7 +70,7 @@ export async function procesarNuevoCliente(
   whatsapp: string,
   conversacion_id: string
 ): Promise<void> {
-  await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
+  await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id, true);
 }
 
 // ============================================================
@@ -198,6 +198,9 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
   // PRIORIDAD 5: enrutamiento por intención
   switch (intencion) {
     case 'saludo':
+      await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id, true);
+      break;
+
     case 'catalogo':
       await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
       break;
@@ -244,7 +247,8 @@ async function mostrarCategorias(
   empresa_id: string,
   cliente: Cliente | null,
   whatsapp: string,
-  conversacion_id: string
+  conversacion_id: string,
+  saludar: boolean = false
 ): Promise<void> {
   const { data: categorias, error } = await obtenerCategorias(empresa_id);
 
@@ -256,9 +260,15 @@ async function mostrarCategorias(
     return;
   }
 
+  // El saludo completo (con reconocimiento de cliente y fecha del último
+  // pedido) solo tiene sentido en el primer contacto real de la conversación
+  // — no cada vez que se navega de vuelta a categorías desde otro punto del
+  // flujo, para no dar la sensación de que la conversación reinicia.
   const nombre = nombreClienteVisible(cliente);
   let saludo: string;
-  if (nombre && cliente?.fecha_ultimo_pedido) {
+  if (!saludar) {
+    saludo = '¿Qué categoría te interesa? 👇';
+  } else if (nombre && cliente?.fecha_ultimo_pedido) {
     const fecha = new Date(cliente.fecha_ultimo_pedido).toLocaleDateString('es-CO', {
       day: 'numeric',
       month: 'long',
@@ -459,6 +469,7 @@ async function enviarOfertasDeCategoria(
   }
 
   await enviarReplyButtons(whatsapp, '¿Qué más deseas hacer?', [
+    { id: 'btn_ofertas',   title: 'Ver más ofertas' },
     { id: 'btn_ver_cat',   title: 'Ver catálogo' },
     { id: 'btn_confirmar', title: 'Confirmar pedido' },
   ]);
