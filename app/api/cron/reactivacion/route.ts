@@ -4,7 +4,7 @@ import { reactivarConversacion } from '@/lib/reactivacion';
 
 const EMPRESA_ID = process.env.EMPRESA_ID_DEFAULT ?? '';
 
-// Disparado por un workflow externo (GitHub Actions) cada ~20 min, no por
+// Disparado por un workflow externo (GitHub Actions) cada ~10 min, no por
 // Vercel Cron: Vercel Hobby solo permite crons diarios y ya hay 2 en uso.
 export async function GET(request: NextRequest): Promise<NextResponse> {
   const authHeader = request.headers.get('authorization');

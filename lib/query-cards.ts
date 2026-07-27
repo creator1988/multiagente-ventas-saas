@@ -578,9 +578,11 @@ export async function obtenerHistorialMensajes(
 
 // ============================================================
 // CONVERSACIONES PARA REACTIVAR — activas, cuyo último mensaje fue del
-// cliente y cayó en la ventana de 20-23h (antes de que cierre la ventana
-// de 24h de WhatsApp). Enviar la reactivación con guardarMensaje(rol:'agente')
-// las saca de este filtro en la siguiente corrida (dedup sin columna extra).
+// cliente y lleva entre 30 y 45 minutos sin respuesta del agente (el
+// negocio necesita que el pedido se confirme el mismo día para alistamiento
+// y logística, no puede esperar a que cierre la ventana de 24h de WhatsApp).
+// Enviar la reactivación con guardarMensaje(rol:'agente') las saca de este
+// filtro en la siguiente corrida (dedup sin columna extra).
 // ============================================================
 export interface ConversacionParaReactivar {
   conversacion_id: string;
@@ -601,7 +603,7 @@ export async function conversacionesParaReactivar(
     ) ultimo ON true
     WHERE c.empresa_id = ${empresa_id}
       AND c.estado = 'activa'
-      AND c.ultimo_mensaje BETWEEN NOW() - INTERVAL '23 hours' AND NOW() - INTERVAL '20 hours'
+      AND c.ultimo_mensaje BETWEEN NOW() - INTERVAL '45 minutes' AND NOW() - INTERVAL '30 minutes'
       AND ultimo.rol = 'cliente'
     ORDER BY c.ultimo_mensaje ASC
     LIMIT 50

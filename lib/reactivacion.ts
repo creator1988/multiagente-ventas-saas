@@ -2,7 +2,7 @@ import { getClient, CLAUDE_MODEL } from './claude';
 import { obtenerHistorialMensajes, guardarMensaje, type ConversacionParaReactivar } from './query-cards';
 import { enviarTexto } from './kapso';
 
-const REACTIVACION_SYSTEM_PROMPT = `Eres un asesor comercial colombiano que retoma una conversación de WhatsApp que el cliente dejó sin terminar hace varias horas, antes de que se cierre la ventana de contacto.
+const REACTIVACION_SYSTEM_PROMPT = `Eres un asesor comercial colombiano que retoma una conversación de WhatsApp que el cliente dejó sin terminar hace un rato (30-45 minutos).
 
 Con el historial que se te da, escribe UN solo mensaje corto (máximo 2 líneas) para reabrir la conversación:
 - Cálido y natural, nunca insistente ni con tono de venta forzada.

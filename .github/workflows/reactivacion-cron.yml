@@ -1,8 +1,8 @@
-name: Reactivación de conversaciones (ventana 24h)
+name: Reactivación de conversaciones abandonadas (30-45 min)
 
 on:
   schedule:
-    - cron: '*/20 * * * *'
+    - cron: '*/10 * * * *'
   workflow_dispatch: {}
 
 jobs:
