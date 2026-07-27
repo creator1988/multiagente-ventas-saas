@@ -577,12 +577,13 @@ export async function obtenerHistorialMensajes(
 }
 
 // ============================================================
-// CONVERSACIONES PARA REACTIVAR — activas, cuyo último mensaje fue del
-// cliente y lleva entre 30 y 45 minutos sin respuesta del agente (el
-// negocio necesita que el pedido se confirme el mismo día para alistamiento
-// y logística, no puede esperar a que cierre la ventana de 24h de WhatsApp).
-// Enviar la reactivación con guardarMensaje(rol:'agente') las saca de este
-// filtro en la siguiente corrida (dedup sin columna extra).
+// CONVERSACIONES PARA REACTIVAR — activas, cuyo último mensaje ESCRITO POR
+// EL CLIENTE lleva entre 30 y 45 minutos sin que el cliente vuelva a
+// escribir (las respuestas automáticas del bot no cuentan como "actividad
+// del cliente" — el bot siempre contesta al instante, así que medir el
+// silencio desde el último mensaje de la conversación nunca detectaría
+// nada). reactivacion_enviada_at evita reenviar dos veces por el mismo
+// silencio; se limpia solo cuando el cliente vuelve a escribir después.
 // ============================================================
 export interface ConversacionParaReactivar {
   conversacion_id: string;
@@ -598,15 +599,19 @@ export async function conversacionesParaReactivar(
     FROM conversaciones c
     JOIN clientes cl ON cl.id = c.cliente_id
     JOIN LATERAL (
-      SELECT rol FROM mensajes WHERE conversacion_id = c.id
-      ORDER BY timestamp DESC LIMIT 1
-    ) ultimo ON true
+      SELECT MAX(timestamp) AS ultimo_cliente FROM mensajes
+      WHERE conversacion_id = c.id AND rol = 'cliente'
+    ) m ON true
     WHERE c.empresa_id = ${empresa_id}
       AND c.estado = 'activa'
-      AND c.ultimo_mensaje BETWEEN NOW() - INTERVAL '45 minutes' AND NOW() - INTERVAL '30 minutes'
-      AND ultimo.rol = 'cliente'
-    ORDER BY c.ultimo_mensaje ASC
+      AND m.ultimo_cliente BETWEEN NOW() - INTERVAL '45 minutes' AND NOW() - INTERVAL '30 minutes'
+      AND (c.reactivacion_enviada_at IS NULL OR c.reactivacion_enviada_at < m.ultimo_cliente)
+    ORDER BY m.ultimo_cliente ASC
     LIMIT 50
   `;
   return rows as ConversacionParaReactivar[];
+}
+
+export async function marcarReactivacionEnviada(conversacion_id: string): Promise<void> {
+  await sql`UPDATE conversaciones SET reactivacion_enviada_at = NOW() WHERE id = ${conversacion_id}`;
 }

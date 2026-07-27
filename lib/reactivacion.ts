@@ -1,5 +1,5 @@
 import { getClient, CLAUDE_MODEL } from './claude';
-import { obtenerHistorialMensajes, guardarMensaje, type ConversacionParaReactivar } from './query-cards';
+import { obtenerHistorialMensajes, guardarMensaje, marcarReactivacionEnviada, type ConversacionParaReactivar } from './query-cards';
 import { enviarTexto } from './kapso';
 
 const REACTIVACION_SYSTEM_PROMPT = `Eres un asesor comercial colombiano que retoma una conversación de WhatsApp que el cliente dejó sin terminar hace un rato (30-45 minutos).
@@ -50,6 +50,7 @@ export async function reactivarConversacion(
       rol: 'agente',
       contenido: mensaje,
     });
+    await marcarReactivacionEnviada(conversacion.conversacion_id);
 
     return { conversacion_id: conversacion.conversacion_id, enviado: true };
   } catch (e) {
