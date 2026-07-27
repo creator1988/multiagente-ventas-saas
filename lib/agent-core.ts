@@ -175,7 +175,7 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     }
 
     if (esTextoOfertas(textoUsuario)) {
-      await mostrarOfertas(params);
+      await mostrarOfertas(params, estado);
       return;
     }
 
@@ -210,7 +210,7 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
       break;
 
     case 'ver_ofertas':
-      await mostrarOfertas(params);
+      await mostrarOfertas(params, estado);
       break;
 
     case 'pedido':
@@ -402,13 +402,14 @@ async function mostrarProductosCategoria(
 // combos de rubros que no le interesan (ej. una droguería viendo salsas).
 // ============================================================
 async function mostrarOfertas(
-  params: ProcesarParams
+  params: ProcesarParams,
+  estado: EstadoFlujo
 ): Promise<void> {
   const { empresa_id, whatsapp, conversacion_id, cliente, textoUsuario } = params;
 
   if (textoUsuario.startsWith('catoferta_')) {
     const categoria_id = textoUsuario.replace(/^catoferta_/, '');
-    await enviarOfertasDeCategoria(params, categoria_id);
+    await enviarOfertasDeCategoria(params, estado, categoria_id);
     return;
   }
 
@@ -427,7 +428,7 @@ async function mostrarOfertas(
   }
 
   if (categorias.length === 1) {
-    await enviarOfertasDeCategoria(params, categorias[0].id);
+    await enviarOfertasDeCategoria(params, estado, categorias[0].id);
     return;
   }
 
@@ -447,10 +448,14 @@ async function mostrarOfertas(
 
 // ============================================================
 // PRIVADO: enviarOfertasDeCategoria — envía las imágenes de las ofertas de
-// una categoría específica (siempre categorizada, nunca el catálogo completo)
+// una categoría específica y, a continuación, los productos normales de esa
+// misma categoría. Para el cliente "oferta" vs "producto" es un tecnicismo
+// interno: si pregunta por una categoría espera ver todo lo que hay ahí, no
+// solo el combo aislado (ej. Confitería con 1 combo pero 3 productos más).
 // ============================================================
 async function enviarOfertasDeCategoria(
   params: ProcesarParams,
+  estado: EstadoFlujo,
   categoria_id: string
 ): Promise<void> {
   const { empresa_id, whatsapp, conversacion_id, cliente } = params;
@@ -466,6 +471,21 @@ async function enviarOfertasDeCategoria(
 
   for (const o of ofertas) {
     await enviarOfertaConBoton(whatsapp, o);
+  }
+
+  const [categoria_nombre, { data: productos }] = await Promise.all([
+    obtenerNombreCategoria(empresa_id, categoria_id),
+    productosPorCategoria(empresa_id, categoria_id),
+  ]);
+
+  if (productos && productos.length > 0) {
+    await enviarListaProductosSinImagenes(
+      params,
+      estado,
+      categoria_id,
+      categoria_nombre ?? 'esta categoría',
+      productos
+    );
   }
 
   await enviarReplyButtons(whatsapp, '¿Qué más deseas hacer?', [
@@ -692,7 +712,7 @@ async function seleccionarOferta(
     const msg = 'No pude identificar esa oferta. Te muestro las disponibles:';
     await enviarTexto(whatsapp, msg);
     await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
-    await mostrarOfertas(params);
+    await mostrarOfertas(params, estado);
     return;
   }
 
