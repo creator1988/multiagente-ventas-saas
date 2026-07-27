@@ -4,6 +4,7 @@ import {
   obtenerCategorias,
   productosPorCategoria,
   ofertasParaMostrar,
+  categoriasConOfertas,
   obtenerOferta,
   consultarStock,
   historialCliente,
@@ -165,7 +166,7 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
   // PRIORIDAD 4.5: detección temprana en texto libre (categoría, ofertas o producto por
   // nombre) — corre ANTES del switch por intención porque el clasificador de regex no
   // reconoce nombres reales de categorías/productos ni frases sueltas de audio transcrito.
-  const esIdEstructurado = /^(cat_|add_|addoferta_|btn_|qty_)/.test(textoUsuario);
+  const esIdEstructurado = /^(cat_|catoferta_|add_|addoferta_|btn_|qty_)/.test(textoUsuario);
   if (!esIdEstructurado) {
     const categoriaDetectada = await detectarCategoriaPorTexto(empresa_id, textoUsuario);
     if (categoriaDetectada) {
@@ -386,13 +387,60 @@ async function mostrarProductosCategoria(
 }
 
 // ============================================================
-// PRIVADO: mostrarOfertas
+// PRIVADO: mostrarOfertas — primero pregunta la categoría de interés (si hay
+// más de una con ofertas categorizadas) para no saturar al cliente con
+// combos de rubros que no le interesan (ej. una droguería viendo salsas).
 // ============================================================
 async function mostrarOfertas(
   params: ProcesarParams
 ): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id, textoUsuario } = params;
+
+  if (textoUsuario.startsWith('catoferta_')) {
+    const categoria_id = textoUsuario.replace(/^catoferta_/, '');
+    await enviarOfertasDeCategoria(params, categoria_id);
+    return;
+  }
+
+  const { data: categorias, error } = await categoriasConOfertas(empresa_id);
+  if (error) console.error('[agent-core] categoriasConOfertas error:', error);
+
+  if (!categorias || categorias.length === 0) {
+    // Ninguna oferta tiene categoria_id asignado todavía (pendiente backfill):
+    // se mantiene el comportamiento anterior como fallback.
+    await enviarOfertasDeCategoria(params, null);
+    return;
+  }
+
+  if (categorias.length === 1) {
+    await enviarOfertasDeCategoria(params, categorias[0].id);
+    return;
+  }
+
+  const rows = categorias.slice(0, 10).map(c => ({
+    id: `catoferta_${c.id}`,
+    title: c.nombre.substring(0, 24),
+  }));
+
+  await enviarListMessage(
+    whatsapp,
+    '¿Qué tipo de ofertas te interesan? 🏷️',
+    'Ver categorías',
+    [{ title: 'Categorías con ofertas', rows }]
+  );
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: 'Selector de categorías de ofertas mostrado' });
+}
+
+// ============================================================
+// PRIVADO: enviarOfertasDeCategoria — envía las imágenes de las ofertas de
+// una categoría (o todas, si categoria_id es null, fallback pre-backfill)
+// ============================================================
+async function enviarOfertasDeCategoria(
+  params: ProcesarParams,
+  categoria_id: string | null
+): Promise<void> {
   const { empresa_id, whatsapp, conversacion_id, cliente } = params;
-  const { data: ofertas, error } = await ofertasParaMostrar(empresa_id);
+  const { data: ofertas, error } = await ofertasParaMostrar(empresa_id, categoria_id ?? undefined);
 
   if (error || !ofertas || ofertas.length === 0) {
     const msg = 'No hay ofertas disponibles en este momento. ¿Te muestro el catálogo?';

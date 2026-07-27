@@ -71,6 +71,7 @@ export interface Producto {
 export interface Oferta {
   id: string;
   empresa_id: string;
+  categoria_id?: string;
   nombre: string;
   descripcion?: string;
   precio_combo?: number;

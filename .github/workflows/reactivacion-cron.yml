@@ -1,0 +1,16 @@
+name: Reactivación de conversaciones (ventana 24h)
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'
+  workflow_dispatch: {}
+
+jobs:
+  llamar-cron:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Llamar endpoint de reactivación
+        run: |
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${{ secrets.CRON_SECRET }}" \
+            "https://multiagente-ventas-saas.vercel.app/api/cron/reactivacion"

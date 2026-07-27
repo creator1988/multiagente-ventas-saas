@@ -18,7 +18,13 @@ interface Oferta {
   precio_combo: number;
   url_imagen: string | null;
   activo: boolean;
+  categoria_id: string | null;
   componentes: Componente[];
+}
+
+interface CategoriaOpcion {
+  id: string;
+  nombre: string;
 }
 
 type Pestaña = 'productos' | 'ofertas';
@@ -44,6 +50,8 @@ export default function CatalogPage() {
   const [errorOfertas, setErrorOfertas] = useState<string | null>(null);
   const [editandoOferta, setEditandoOferta] = useState<string | null>(null);
   const [precioOferta, setPrecioOferta] = useState<number>(0);
+  const [categoriaOferta, setCategoriaOferta] = useState<string>('');
+  const [categoriasOfertas, setCategoriasOfertas] = useState<CategoriaOpcion[]>([]);
 
   async function cargarProductos() {
     setErrorProd(null);
@@ -67,12 +75,13 @@ export default function CatalogPage() {
     setErrorOfertas(null);
     try {
       const res = await fetch('/api/offers');
-      const json = await res.json() as { data?: Oferta[]; error?: string; detalle?: string };
+      const json = await res.json() as { data?: Oferta[]; categorias?: CategoriaOpcion[]; error?: string; detalle?: string };
       if (!res.ok || json.error) {
         setErrorOfertas(json.detalle ?? json.error ?? `Error ${res.status}`);
         setOfertas([]);
       } else {
         setOfertas(json.data ?? []);
+        setCategoriasOfertas(json.categorias ?? []);
       }
     } catch (err) {
       setErrorOfertas(String(err));
@@ -115,7 +124,7 @@ export default function CatalogPage() {
     await fetch(`/api/offers?id=${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ precio_combo: precioOferta }),
+      body: JSON.stringify({ precio_combo: precioOferta, categoria_id: categoriaOferta || null }),
     });
     setEditandoOferta(null);
     cargarOfertas();
@@ -318,6 +327,17 @@ export default function CatalogPage() {
                           value={precioOferta}
                           onChange={(e) => setPrecioOferta(Number(e.target.value))} />
                       </div>
+                      <div>
+                        <label className="text-xs text-gray-500">Categoría</label>
+                        <select className="block border border-gray-300 rounded px-2 py-1 w-40 text-sm"
+                          value={categoriaOferta}
+                          onChange={(e) => setCategoriaOferta(e.target.value)}>
+                          <option value="">Sin categoría</option>
+                          {categoriasOfertas.map((c) => (
+                            <option key={c.id} value={c.id}>{c.nombre}</option>
+                          ))}
+                        </select>
+                      </div>
                       <button onClick={() => guardarOferta(o.id)} className="bg-green-600 text-white px-3 py-1.5 rounded text-sm mt-4">Guardar</button>
                       <button onClick={() => setEditandoOferta(null)} className="text-gray-500 px-3 py-1.5 rounded text-sm border mt-4">Cancelar</button>
                     </div>
@@ -325,9 +345,12 @@ export default function CatalogPage() {
                     <div className="flex items-center gap-4 flex-shrink-0">
                       <div className="text-right">
                         <p className="font-semibold text-purple-700">${Number(o.precio_combo).toLocaleString('es-CO')}</p>
-                        <p className="text-xs text-gray-400 mt-0.5">{o.activo ? 'Activo' : 'Inactivo'}</p>
+                        <p className="text-xs text-gray-400 mt-0.5">
+                          {categoriasOfertas.find((c) => c.id === o.categoria_id)?.nombre ?? 'Sin categoría'}
+                          {' · '}{o.activo ? 'Activo' : 'Inactivo'}
+                        </p>
                       </div>
-                      <button onClick={() => { setEditandoOferta(o.id); setPrecioOferta(Number(o.precio_combo)); }}
+                      <button onClick={() => { setEditandoOferta(o.id); setPrecioOferta(Number(o.precio_combo)); setCategoriaOferta(o.categoria_id ?? ''); }}
                         className="text-blue-600 text-sm hover:underline">
                         Editar
                       </button>

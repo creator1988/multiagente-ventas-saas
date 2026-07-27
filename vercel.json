@@ -27,6 +27,9 @@
     },
     "app/api/cron/escalability/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/reactivacion/route.ts": {
+      "maxDuration": 60
     }
   }
 }

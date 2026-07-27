@@ -66,6 +66,7 @@ export function clasificarIntencion(texto: string): Intencion {
   if (textoPlano === 'hacer un pedido')                 return 'catalogo';
 
   // IDs de botones/listas — tienen prioridad absoluta sobre regex
+  if (texto.startsWith('catoferta_'))                   return 'ver_ofertas';
   if (texto.startsWith('cat_'))                        return 'categoria_seleccionada';
   if (texto.startsWith('addoferta_'))                  return 'agregar_pedido';
   if (texto.startsWith('add_'))                        return 'agregar_pedido';

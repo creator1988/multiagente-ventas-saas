@@ -381,19 +381,54 @@ export async function productosPorCategoria(
 // OFERTAS PARA MOSTRAR (tabla directa, con url_imagen)
 // ============================================================
 export async function ofertasParaMostrar(
-  empresa_id: string
+  empresa_id: string,
+  categoria_id?: string
 ): Promise<QueryCardResult<Oferta[]>> {
   try {
-    const rows = await sql`
-      SELECT id, empresa_id, nombre, descripcion, precio_combo,
-             url_imagen, activo, orden_display
-      FROM ofertas
-      WHERE empresa_id = ${empresa_id}
-        AND activo = true
-      ORDER BY orden_display ASC NULLS LAST, nombre ASC
-      LIMIT 20
-    `;
+    const rows = categoria_id
+      ? await sql`
+          SELECT id, empresa_id, categoria_id, nombre, descripcion, precio_combo,
+                 url_imagen, activo, orden_display
+          FROM ofertas
+          WHERE empresa_id = ${empresa_id}
+            AND categoria_id = ${categoria_id}
+            AND activo = true
+          ORDER BY orden_display ASC NULLS LAST, nombre ASC
+          LIMIT 20
+        `
+      : await sql`
+          SELECT id, empresa_id, categoria_id, nombre, descripcion, precio_combo,
+                 url_imagen, activo, orden_display
+          FROM ofertas
+          WHERE empresa_id = ${empresa_id}
+            AND activo = true
+          ORDER BY orden_display ASC NULLS LAST, nombre ASC
+          LIMIT 20
+        `;
     return { data: rows as Oferta[], error: null, cached: false };
+  } catch (e) {
+    return { data: null, error: String(e), cached: false };
+  }
+}
+
+// ============================================================
+// CATEGORÍAS CON OFERTAS — para el selector de categorías de ofertas,
+// solo categorías que tienen al menos una oferta activa categorizada
+// ============================================================
+export async function categoriasConOfertas(
+  empresa_id: string
+): Promise<QueryCardResult<Categoria[]>> {
+  try {
+    const rows = await sql`
+      SELECT DISTINCT c.id, c.empresa_id, c.nombre, c.icono_url, c.orden_display, c.activo
+      FROM categorias c
+      JOIN ofertas o ON o.categoria_id = c.id
+      WHERE c.empresa_id = ${empresa_id}
+        AND c.activo = true
+        AND o.activo = true
+      ORDER BY c.orden_display ASC NULLS LAST, c.nombre ASC
+    `;
+    return { data: rows as Categoria[], error: null, cached: false };
   } catch (e) {
     return { data: null, error: String(e), cached: false };
   }
@@ -539,4 +574,37 @@ export async function obtenerHistorialMensajes(
       rol: (m.rol === 'cliente' ? 'user' : 'assistant') as 'user' | 'assistant',
       contenido: m.contenido,
     }));
+}
+
+// ============================================================
+// CONVERSACIONES PARA REACTIVAR — activas, cuyo último mensaje fue del
+// cliente y cayó en la ventana de 20-23h (antes de que cierre la ventana
+// de 24h de WhatsApp). Enviar la reactivación con guardarMensaje(rol:'agente')
+// las saca de este filtro en la siguiente corrida (dedup sin columna extra).
+// ============================================================
+export interface ConversacionParaReactivar {
+  conversacion_id: string;
+  cliente_id: string;
+  whatsapp: string;
+}
+
+export async function conversacionesParaReactivar(
+  empresa_id: string
+): Promise<ConversacionParaReactivar[]> {
+  const rows = await sql`
+    SELECT c.id AS conversacion_id, c.cliente_id, cl.whatsapp
+    FROM conversaciones c
+    JOIN clientes cl ON cl.id = c.cliente_id
+    JOIN LATERAL (
+      SELECT rol FROM mensajes WHERE conversacion_id = c.id
+      ORDER BY timestamp DESC LIMIT 1
+    ) ultimo ON true
+    WHERE c.empresa_id = ${empresa_id}
+      AND c.estado = 'activa'
+      AND c.ultimo_mensaje BETWEEN NOW() - INTERVAL '23 hours' AND NOW() - INTERVAL '20 hours'
+      AND ultimo.rol = 'cliente'
+    ORDER BY c.ultimo_mensaje ASC
+    LIMIT 50
+  `;
+  return rows as ConversacionParaReactivar[];
 }
