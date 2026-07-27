@@ -394,7 +394,7 @@ async function mostrarProductosCategoria(
 async function mostrarOfertas(
   params: ProcesarParams
 ): Promise<void> {
-  const { empresa_id, whatsapp, conversacion_id, textoUsuario } = params;
+  const { empresa_id, whatsapp, conversacion_id, cliente, textoUsuario } = params;
 
   if (textoUsuario.startsWith('catoferta_')) {
     const categoria_id = textoUsuario.replace(/^catoferta_/, '');
@@ -406,9 +406,13 @@ async function mostrarOfertas(
   if (error) console.error('[agent-core] categoriasConOfertas error:', error);
 
   if (!categorias || categorias.length === 0) {
-    // Ninguna oferta tiene categoria_id asignado todavía (pendiente backfill):
-    // se mantiene el comportamiento anterior como fallback.
-    await enviarOfertasDeCategoria(params, null);
+    // Ninguna oferta tiene categoria_id asignado: jamás se manda el catálogo
+    // de ofertas completo sin filtrar (eso era exactamente el problema que
+    // se quería evitar). En su lugar se guía al cliente por categorías.
+    const msg = 'Por ahora te muestro nuestras categorías 👇';
+    await enviarTexto(whatsapp, msg);
+    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+    await mostrarCategorias(empresa_id, cliente, whatsapp, conversacion_id);
     return;
   }
 
@@ -433,14 +437,14 @@ async function mostrarOfertas(
 
 // ============================================================
 // PRIVADO: enviarOfertasDeCategoria — envía las imágenes de las ofertas de
-// una categoría (o todas, si categoria_id es null, fallback pre-backfill)
+// una categoría específica (siempre categorizada, nunca el catálogo completo)
 // ============================================================
 async function enviarOfertasDeCategoria(
   params: ProcesarParams,
-  categoria_id: string | null
+  categoria_id: string
 ): Promise<void> {
   const { empresa_id, whatsapp, conversacion_id, cliente } = params;
-  const { data: ofertas, error } = await ofertasParaMostrar(empresa_id, categoria_id ?? undefined);
+  const { data: ofertas, error } = await ofertasParaMostrar(empresa_id, categoria_id);
 
   if (error || !ofertas || ofertas.length === 0) {
     const msg = 'No hay ofertas disponibles en este momento. ¿Te muestro el catálogo?';
