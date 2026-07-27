@@ -459,7 +459,7 @@ async function enviarOfertasDeCategoria(
   }
 
   await enviarReplyButtons(whatsapp, '¿Qué más deseas hacer?', [
-    { id: 'btn_ver_cat',   title: 'Ver categorías' },
+    { id: 'btn_ver_cat',   title: 'Ver catálogo' },
     { id: 'btn_confirmar', title: 'Confirmar pedido' },
   ]);
   await guardarMensaje({ conversacion_id, rol: 'agente', contenido: `Ofertas mostradas (${ofertas.length})` });
