@@ -1,8 +1,10 @@
 name: Reactivación de conversaciones abandonadas (30-45 min)
 
+# El trigger "schedule" se desactivó: GitHub Actions lo ejecutaba cada 1-3h
+# en la práctica en vez de cada 10 min (limite documentado de su scheduler,
+# no confiable para una ventana de deteccion de 15 min). El disparo real
+# ahora lo hace cron-job.org. Se deja workflow_dispatch para pruebas manuales.
 on:
-  schedule:
-    - cron: '*/10 * * * *'
   workflow_dispatch: {}
 
 jobs:
