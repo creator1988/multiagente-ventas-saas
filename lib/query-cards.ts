@@ -300,9 +300,18 @@ export async function guardarMensaje(params: {
   // de la fila: el monitor (ORDER BY ultimo_mensaje DESC) deja de reflejar
   // actividad reciente y, en bases con más filas que el LIMIT, puede
   // directamente omitir conversaciones activas.
-  await sql`
-    UPDATE conversaciones SET ultimo_mensaje = NOW() WHERE id = ${params.conversacion_id}
-  `;
+  if (params.rol === 'cliente') {
+    // El cliente volvió a escribir: se reinicia el contador de reactivaciones
+    // consecutivas sin respuesta, porque este es un nuevo momento de silencio.
+    await sql`
+      UPDATE conversaciones SET ultimo_mensaje = NOW(), reactivaciones_consecutivas = 0
+      WHERE id = ${params.conversacion_id}
+    `;
+  } else {
+    await sql`
+      UPDATE conversaciones SET ultimo_mensaje = NOW() WHERE id = ${params.conversacion_id}
+    `;
+  }
 }
 
 // ============================================================
@@ -584,6 +593,9 @@ export async function obtenerHistorialMensajes(
 // silencio desde el último mensaje de la conversación nunca detectaría
 // nada). reactivacion_enviada_at evita reenviar dos veces por el mismo
 // silencio; se limpia solo cuando el cliente vuelve a escribir después.
+// Además: nunca fuera del horario 7am-7pm (hora Colombia), y nunca más de
+// 3 veces seguidas sin que el cliente responda (reactivaciones_consecutivas,
+// se reinicia en guardarMensaje apenas el cliente vuelve a escribir).
 // ============================================================
 export interface ConversacionParaReactivar {
   conversacion_id: string;
@@ -606,6 +618,8 @@ export async function conversacionesParaReactivar(
       AND c.estado = 'activa'
       AND m.ultimo_cliente BETWEEN NOW() - INTERVAL '45 minutes' AND NOW() - INTERVAL '30 minutes'
       AND (c.reactivacion_enviada_at IS NULL OR c.reactivacion_enviada_at < m.ultimo_cliente)
+      AND c.reactivaciones_consecutivas < 3
+      AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'America/Bogota') BETWEEN 7 AND 18
     ORDER BY m.ultimo_cliente ASC
     LIMIT 50
   `;
@@ -613,5 +627,9 @@ export async function conversacionesParaReactivar(
 }
 
 export async function marcarReactivacionEnviada(conversacion_id: string): Promise<void> {
-  await sql`UPDATE conversaciones SET reactivacion_enviada_at = NOW() WHERE id = ${conversacion_id}`;
+  await sql`
+    UPDATE conversaciones
+    SET reactivacion_enviada_at = NOW(), reactivaciones_consecutivas = reactivaciones_consecutivas + 1
+    WHERE id = ${conversacion_id}
+  `;
 }
