@@ -593,7 +593,7 @@ export async function obtenerHistorialMensajes(
 // silencio desde el último mensaje de la conversación nunca detectaría
 // nada). reactivacion_enviada_at evita reenviar dos veces por el mismo
 // silencio; se limpia solo cuando el cliente vuelve a escribir después.
-// Además: nunca fuera del horario 7am-7pm (hora Colombia), y nunca más de
+// Además: nunca fuera del horario 7am-9pm (hora Colombia), y nunca más de
 // 3 veces seguidas sin que el cliente responda (reactivaciones_consecutivas,
 // se reinicia en guardarMensaje apenas el cliente vuelve a escribir).
 // ============================================================
@@ -619,7 +619,7 @@ export async function conversacionesParaReactivar(
       AND m.ultimo_cliente BETWEEN NOW() - INTERVAL '45 minutes' AND NOW() - INTERVAL '30 minutes'
       AND (c.reactivacion_enviada_at IS NULL OR c.reactivacion_enviada_at < m.ultimo_cliente)
       AND c.reactivaciones_consecutivas < 3
-      AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'America/Bogota') BETWEEN 7 AND 18
+      AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'America/Bogota') BETWEEN 7 AND 20
     ORDER BY m.ultimo_cliente ASC
     LIMIT 50
   `;
