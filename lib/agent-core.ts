@@ -39,6 +39,30 @@ function normalizarTexto(texto: string): string {
     .trim();
 }
 
+// Palabras de relleno frecuentes en preguntas sueltas ("¿el halls que precio
+// tiene?") que no aportan nada como término de búsqueda de producto.
+const STOPWORDS_BUSQUEDA = new Set([
+  'si', 'no', 'el', 'la', 'los', 'las', 'un', 'una', 'unos', 'unas', 'de', 'del', 'al',
+  'que', 'me', 'te', 'se', 'le', 'les', 'lo', 'mi', 'tu', 'su',
+  'parece', 'interesante', 'interesa', 'tiene', 'tienes', 'tengo', 'hay',
+  'con', 'por', 'para', 'y', 'o', 'pero', 'es', 'ese', 'esa', 'esto', 'eso', 'esos', 'esas',
+  'este', 'esta', 'estos', 'estas', 'cual', 'cuales', 'como', 'cuanto', 'cuanta', 'cuantos', 'cuantas',
+  'precio', 'precios', 'vale', 'cuesta', 'cuestan', 'valen', 'disponible', 'disponibles',
+  'quiero', 'necesito', 'comprar', 'ver', 'mostrar', 'dame', 'ponme', 'favor', 'porfa', 'porfavor',
+]);
+
+// Extrae palabras candidatas a ser el nombre de un producto mencionado dentro
+// de una frase libre, ordenadas de más a menos larga (las más largas suelen
+// ser más específicas, ej. "halls" antes que ruido corto que se coló).
+function palabrasCandidatas(texto: string): string[] {
+  return normalizarTexto(texto)
+    .replace(/[¿?¡!.,]/g, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 3 && !STOPWORDS_BUSQUEDA.has(w))
+    .sort((a, b) => b.length - a.length)
+    .slice(0, 5);
+}
+
 function esTextoOfertas(texto: string): boolean {
   return OFERTAS_REGEX.test(normalizarTexto(texto));
 }
@@ -184,13 +208,19 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
       return;
     }
 
-    // Nombre de producto "pelado" sin verbo (ej. "Halls", audio transcrito literal).
-    // Búsqueda silenciosa: si no hay match no respondemos aquí, seguimos el flujo normal.
+    // Nombre de producto "pelado" sin verbo (ej. "Halls", audio transcrito literal),
+    // o mencionado dentro de una frase libre (ej. "el halls me parece interesante,
+    // que precio tiene?" — la frase completa nunca calza con un nombre de producto,
+    // así que también se prueba palabra por palabra). Búsqueda silenciosa: si no hay
+    // match no respondemos aquí, seguimos el flujo normal.
     if (textoUsuario.trim().length >= 3) {
-      const { data: productosEncontrados } = await consultarStock(empresa_id, textoUsuario.trim());
-      if (productosEncontrados && productosEncontrados.length > 0) {
-        await presentarProductoParaCantidad(params, estado, productosEncontrados[0]);
-        return;
+      const candidatos = [textoUsuario.trim(), ...palabrasCandidatas(textoUsuario)];
+      for (const candidato of candidatos) {
+        const { data: productosEncontrados } = await consultarStock(empresa_id, candidato);
+        if (productosEncontrados && productosEncontrados.length > 0) {
+          await presentarProductoParaCantidad(params, estado, productosEncontrados[0]);
+          return;
+        }
       }
     }
   }
