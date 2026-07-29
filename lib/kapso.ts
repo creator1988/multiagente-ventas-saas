@@ -242,6 +242,88 @@ export async function enviarBroadcast(broadcastId: string): Promise<{ status: st
   return { status: json.data.status };
 }
 
+// ============================================================
+// HISTORIAL Y DETALLE DE BROADCASTS — docs.kapso.ai/api/platform/v1/broadcasts
+// ============================================================
+export interface KapsoBroadcastResumen {
+  id: string;
+  name: string;
+  status: string;
+  sent_count: number;
+  delivered_count: number;
+  read_count: number;
+  failed_count: number;
+  pending_count: number;
+  responded_count: number;
+  response_rate: number;
+  total_recipients: number;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+}
+
+export async function listarBroadcasts(params: {
+  page?: number;
+  per_page?: number;
+} = {}): Promise<{ data: KapsoBroadcastResumen[]; meta: { page: number; total_pages: number; total_count: number } }> {
+  const { phoneNumberId } = getCredentials();
+  const qs = new URLSearchParams({
+    phone_number_id: phoneNumberId,
+    page: String(params.page ?? 1),
+    per_page: String(params.per_page ?? 50),
+  });
+  const json = (await kapsoBroadcastRequest(`?${qs.toString()}`, 'GET')) as {
+    data: KapsoBroadcastResumen[];
+    meta: { page: number; total_pages: number; total_count: number };
+  };
+  return json;
+}
+
+export async function obtenerBroadcast(broadcastId: string): Promise<KapsoBroadcastResumen> {
+  const json = (await kapsoBroadcastRequest(`/${broadcastId}`, 'GET')) as { data: KapsoBroadcastResumen };
+  return json.data;
+}
+
+export interface KapsoDestinatario {
+  id: string;
+  phone_number: string;
+  status: string;
+  sent_at: string | null;
+  delivered_at: string | null;
+  read_at: string | null;
+  responded_at: string | null;
+  failed_at: string | null;
+  error_message: string | null;
+  error_details: { error_code?: string; error_subcode?: string } | null;
+  created_at: string;
+  updated_at: string;
+}
+
+// La API de Kapso no filtra por estado, solo pagina — se traen todas las
+// páginas y se filtra del lado del servidor. Tope de seguridad de 20 páginas
+// (con per_page=100, hasta 2000 destinatarios) para no colgar el request si
+// una transmisión fuera anormalmente grande.
+export async function listarDestinatariosBroadcast(broadcastId: string): Promise<KapsoDestinatario[]> {
+  const perPage = 100;
+  const topeMaximoPaginas = 20;
+  let pagina = 1;
+  let totalPaginas = 1;
+  const destinatarios: KapsoDestinatario[] = [];
+
+  do {
+    const qs = new URLSearchParams({ page: String(pagina), per_page: String(perPage) });
+    const json = (await kapsoBroadcastRequest(`/${broadcastId}/recipients?${qs.toString()}`, 'GET')) as {
+      data: KapsoDestinatario[];
+      meta: { page: number; total_pages: number };
+    };
+    destinatarios.push(...json.data);
+    totalPaginas = json.meta.total_pages;
+    pagina++;
+  } while (pagina <= totalPaginas && pagina <= topeMaximoPaginas);
+
+  return destinatarios;
+}
+
 export async function descargarMedia(mediaId: string, phoneNumberIdOverride?: string): Promise<Buffer> {
   const { apiKey, phoneNumberId: phoneNumberIdDefault } = getCredentials();
   const phoneNumberId = phoneNumberIdOverride ?? phoneNumberIdDefault;
