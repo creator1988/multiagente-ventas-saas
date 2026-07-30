@@ -31,6 +31,11 @@ const OFERTAS_REGEX = /\b(promoci[oó]n(es)?|ofertas?|combos?|especiales?)\b/i;
 
 const BUSQUEDA_PRODUCTO_REGEX = /^(quiero|necesito|me\s*das?|dame|p[ií]deme|ponme|comprar?|llevar?|tienes?|busco|buscas?)\s+/i;
 
+// Variantes de negación al responder la pregunta de cantidad ("¿Cuántas
+// unidades de X deseas?"): rechazan agregar el producto sin cancelar el
+// pedido completo (eso ya lo cubre btn_cancelar / cancelarFlujo).
+const NEGACION_CANTIDAD_REGEX = /^(0|no|nel|nop|cancela|cancelar|cancelo|ningun[ao]|nada|olv[ií]dalo|d[eé]jalo|mejor\s*no)\b/i;
+
 function normalizarTexto(texto: string): string {
   return texto
     .normalize('NFD')
@@ -124,7 +129,14 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
     await setEstadoFlujo(empresa_id, conversacion_id, { ...estado, etapa: 'inicio' });
   }
 
-  // PRIORIDAD 3: estado "esperando_cantidad" — botones rápidos (qty_N) o texto numérico
+  // PRIORIDAD 3: estado "esperando_cantidad" — botones rápidos (qty_N), texto
+  // numérico, negación (cancela solo ese producto, no todo el pedido) o texto
+  // no reconocible. En los dos últimos casos avisamos con el mismo mensaje
+  // de transición (cancelarCantidad) para que el cliente nunca se quede sin
+  // saber que el producto pendiente quedó descartado — la única diferencia
+  // es que el texto no reconocible, además, se deja caer al enrutamiento
+  // normal por si en realidad era otra cosa (categoría, producto, o
+  // fallback a Claude).
   if (estado.etapa === 'esperando_cantidad') {
     const qtyMatch = textoUsuario.match(/^qty_(\d+)$/);
     const num = qtyMatch
@@ -134,10 +146,11 @@ export async function procesarConClaude(params: ProcesarParams): Promise<void> {
       await manejarCantidad(params, estado, num);
       return;
     }
-    const msg = `Por favor escribe el número de unidades de *${estado.producto_contexto?.nombre ?? 'ese producto'}* que deseas.`;
-    await enviarTexto(whatsapp, msg);
-    await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
-    return;
+    if (NEGACION_CANTIDAD_REGEX.test(normalizarTexto(textoUsuario))) {
+      await cancelarCantidad(params, estado);
+      return;
+    }
+    await cancelarCantidad(params, estado);
   }
 
   // PRIORIDAD 3.6: submenú "Modificar" — elegir producto del carrito y aplicar la acción pendiente
@@ -803,6 +816,35 @@ async function manejarCantidad(
     : { tipo: 'producto', producto_id: p.id, nombre: p.nombre, cantidad, precio_unitario: p.precio };
 
   await confirmarItemAgregado(params, estado, [...estado.carrito, nuevoItem], p);
+}
+
+// ============================================================
+// PRIVADO: cancelarCantidad — el producto pendiente de cantidad (etapa
+// "esperando_cantidad") se descarta, sea porque el cliente lo rechazó
+// explícitamente (negación) o porque escribió algo no reconocible como
+// número — en ambos casos se avisa con el mismo mensaje para que el cliente
+// nunca se quede sin saber qué pasó con la pregunta pendiente. No toca el
+// carrito existente ni cuenta como cancelar todo el pedido (eso es
+// btn_cancelar / cancelarFlujo) — solo descarta este producto puntual.
+// ============================================================
+async function cancelarCantidad(
+  params: ProcesarParams,
+  estado: EstadoFlujo
+): Promise<void> {
+  const { empresa_id, whatsapp, conversacion_id } = params;
+
+  const msg = 'Entendido, no agregamos ese producto. ¿Quieres ver otra categoría o revisar tu carrito?';
+  await enviarReplyButtons(whatsapp, msg, [
+    { id: 'btn_otra_categoria', title: 'Otra categoría' },
+    { id: 'btn_modificar',      title: 'Ver mi carrito' },
+  ]);
+  await guardarMensaje({ conversacion_id, rol: 'agente', contenido: msg });
+
+  await setEstadoFlujo(empresa_id, conversacion_id, {
+    ...estado,
+    etapa: 'inicio',
+    producto_contexto: undefined,
+  });
 }
 
 // ============================================================

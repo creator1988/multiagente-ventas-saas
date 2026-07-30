@@ -344,16 +344,42 @@ export async function obtenerOCrearConversacion(
 // ============================================================
 // OBTENER CATEGORÍAS
 // ============================================================
+// No basta con activo=true: una categoría sin ningún producto (ni combo) con
+// stock disponible no debe aparecer en el selector — si el cliente la elige
+// de todas formas recibe "no encontré productos" y la categoría sigue en la
+// lista para que la vuelva a elegir por error. Cuenta como "con stock" si
+// tiene al menos un producto propio con stock>0, o al menos un combo activo
+// cuyos componentes tengan stock suficiente (mismo criterio que seleccionarOferta).
 export async function obtenerCategorias(
   empresa_id: string
 ): Promise<QueryCardResult<Categoria[]>> {
   try {
     const rows = await sql`
-      SELECT id, empresa_id, nombre, icono_url, orden_display, activo
-      FROM categorias
-      WHERE empresa_id = ${empresa_id}
-        AND activo = true
-      ORDER BY orden_display ASC NULLS LAST, nombre ASC
+      SELECT c.id, c.empresa_id, c.nombre, c.icono_url, c.orden_display, c.activo
+      FROM categorias c
+      WHERE c.empresa_id = ${empresa_id}
+        AND c.activo = true
+        AND (
+          EXISTS (
+            SELECT 1 FROM productos p
+            WHERE p.categoria_id = c.id
+              AND p.activo = true
+              AND p.stock_disponible > 0
+          )
+          OR EXISTS (
+            SELECT 1 FROM ofertas o
+            WHERE o.categoria_id = c.id
+              AND o.activo = true
+              AND EXISTS (SELECT 1 FROM oferta_productos op WHERE op.oferta_id = o.id)
+              AND NOT EXISTS (
+                SELECT 1 FROM oferta_productos op
+                JOIN productos p2 ON p2.id = op.producto_id
+                WHERE op.oferta_id = o.id
+                  AND p2.stock_disponible < op.cantidad
+              )
+          )
+        )
+      ORDER BY c.orden_display ASC NULLS LAST, c.nombre ASC
     `;
     return { data: rows as Categoria[], error: null, cached: false };
   } catch (e) {
@@ -389,6 +415,10 @@ export async function productosPorCategoria(
 // ============================================================
 // OFERTAS PARA MOSTRAR (tabla directa, con url_imagen)
 // ============================================================
+// Excluye combos cuyos componentes no tengan stock suficiente para armar al
+// menos 1 unidad — mismo criterio de stockCombos que ya se usaba en
+// seleccionarOferta, pero aplicado aquí ANTES de listar, para que el cliente
+// no pueda seleccionar un combo agotado desde la lista.
 export async function ofertasParaMostrar(
   empresa_id: string,
   categoria_id?: string
@@ -396,22 +426,36 @@ export async function ofertasParaMostrar(
   try {
     const rows = categoria_id
       ? await sql`
-          SELECT id, empresa_id, categoria_id, nombre, descripcion, precio_combo,
-                 url_imagen, activo, orden_display
-          FROM ofertas
-          WHERE empresa_id = ${empresa_id}
-            AND categoria_id = ${categoria_id}
-            AND activo = true
-          ORDER BY orden_display ASC NULLS LAST, nombre ASC
+          SELECT o.id, o.empresa_id, o.categoria_id, o.nombre, o.descripcion, o.precio_combo,
+                 o.url_imagen, o.activo, o.orden_display
+          FROM ofertas o
+          WHERE o.empresa_id = ${empresa_id}
+            AND o.categoria_id = ${categoria_id}
+            AND o.activo = true
+            AND EXISTS (SELECT 1 FROM oferta_productos op WHERE op.oferta_id = o.id)
+            AND NOT EXISTS (
+              SELECT 1 FROM oferta_productos op
+              JOIN productos p ON p.id = op.producto_id
+              WHERE op.oferta_id = o.id
+                AND p.stock_disponible < op.cantidad
+            )
+          ORDER BY o.orden_display ASC NULLS LAST, o.nombre ASC
           LIMIT 20
         `
       : await sql`
-          SELECT id, empresa_id, categoria_id, nombre, descripcion, precio_combo,
-                 url_imagen, activo, orden_display
-          FROM ofertas
-          WHERE empresa_id = ${empresa_id}
-            AND activo = true
-          ORDER BY orden_display ASC NULLS LAST, nombre ASC
+          SELECT o.id, o.empresa_id, o.categoria_id, o.nombre, o.descripcion, o.precio_combo,
+                 o.url_imagen, o.activo, o.orden_display
+          FROM ofertas o
+          WHERE o.empresa_id = ${empresa_id}
+            AND o.activo = true
+            AND EXISTS (SELECT 1 FROM oferta_productos op WHERE op.oferta_id = o.id)
+            AND NOT EXISTS (
+              SELECT 1 FROM oferta_productos op
+              JOIN productos p ON p.id = op.producto_id
+              WHERE op.oferta_id = o.id
+                AND p.stock_disponible < op.cantidad
+            )
+          ORDER BY o.orden_display ASC NULLS LAST, o.nombre ASC
           LIMIT 20
         `;
     return { data: rows as Oferta[], error: null, cached: false };
@@ -421,8 +465,10 @@ export async function ofertasParaMostrar(
 }
 
 // ============================================================
-// CATEGORÍAS CON OFERTAS — para el selector de categorías de ofertas,
-// solo categorías que tienen al menos una oferta activa categorizada
+// CATEGORÍAS CON OFERTAS — para el selector de categorías de ofertas, solo
+// categorías que tienen al menos una oferta activa Y CON STOCK (mismo
+// criterio que ofertasParaMostrar): de lo contrario el cliente elige la
+// categoría y cae en "no hay ofertas disponibles" sin razón aparente.
 // ============================================================
 export async function categoriasConOfertas(
   empresa_id: string
@@ -435,6 +481,13 @@ export async function categoriasConOfertas(
       WHERE c.empresa_id = ${empresa_id}
         AND c.activo = true
         AND o.activo = true
+        AND EXISTS (SELECT 1 FROM oferta_productos op WHERE op.oferta_id = o.id)
+        AND NOT EXISTS (
+          SELECT 1 FROM oferta_productos op
+          JOIN productos p ON p.id = op.producto_id
+          WHERE op.oferta_id = o.id
+            AND p.stock_disponible < op.cantidad
+        )
       ORDER BY c.orden_display ASC NULLS LAST, c.nombre ASC
     `;
     return { data: rows as Categoria[], error: null, cached: false };
@@ -596,6 +649,14 @@ export async function obtenerHistorialMensajes(
 // Además: nunca fuera del horario 7am-9pm (hora Colombia), y nunca más de
 // 3 veces seguidas sin que el cliente responda (reactivaciones_consecutivas,
 // se reinicia en guardarMensaje apenas el cliente vuelve a escribir).
+//
+// Cooldown post-venta: al confirmar un pedido, la conversación se marca
+// 'completada' (calcularIsaScore) — pero si el cliente escribe algo después
+// (ej. "gracias"), obtenerOCrearConversacion no encuentra conversación activa
+// y crea una nueva. Sin este filtro, esa conversación nueva podía disparar el
+// mensaje genérico de "carrito abandonado" 30-45 min después de una compra ya
+// cerrada, y repetirse cada vez que el cliente respondía algo breve. Se
+// excluye a cualquier cliente con un pedido confirmado en las últimas 24h.
 // ============================================================
 export interface ConversacionParaReactivar {
   conversacion_id: string;
@@ -619,6 +680,7 @@ export async function conversacionesParaReactivar(
       AND m.ultimo_cliente BETWEEN NOW() - INTERVAL '45 minutes' AND NOW() - INTERVAL '30 minutes'
       AND (c.reactivacion_enviada_at IS NULL OR c.reactivacion_enviada_at < m.ultimo_cliente)
       AND c.reactivaciones_consecutivas < 3
+      AND (cl.fecha_ultimo_pedido IS NULL OR cl.fecha_ultimo_pedido < NOW() - INTERVAL '24 hours')
       AND EXTRACT(HOUR FROM NOW() AT TIME ZONE 'America/Bogota') BETWEEN 7 AND 20
     ORDER BY m.ultimo_cliente ASC
     LIMIT 50
