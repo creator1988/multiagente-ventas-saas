@@ -23,9 +23,12 @@ export interface ClienteParaSeguimiento {
   pedido_id: string;
 }
 
-// Ventana de 6h (24-30h / 3-5 días) para tolerar la periodicidad del cron
-// externo (cron-job.org, igual que /api/cron/reactivacion) sin depender de
-// que corra exactamente a una hora fija.
+// Ventana de 8h (24-32h / 3-5 días). El cron externo (cron-job.org) corre
+// cada 6h — la ventana debe ser >= al intervalo del cron para que ningún
+// pedido caiga en un hueco entre corridas (con 6h de intervalo y 6h de
+// ventana ya no habría hueco, pero se deja 1h de margen extra a cada lado
+// por si el cron se atrasa). Por logística de entrega no se puede ampliar
+// más allá de ~32h: el mensaje debe salir dentro de 1 día y medio del pedido.
 export async function clientesParaSeguimientoDia1(
   empresa_id: string
 ): Promise<ClienteParaSeguimiento[]> {
@@ -39,7 +42,7 @@ export async function clientesParaSeguimientoDia1(
       LIMIT 1
     ) pe ON true
     WHERE cl.empresa_id = ${empresa_id}
-      AND cl.fecha_ultimo_pedido BETWEEN NOW() - INTERVAL '30 hours' AND NOW() - INTERVAL '24 hours'
+      AND cl.fecha_ultimo_pedido BETWEEN NOW() - INTERVAL '32 hours' AND NOW() - INTERVAL '24 hours'
       AND NOT EXISTS (
         SELECT 1 FROM seguimientos_postventa sp
         WHERE sp.pedido_id = pe.id AND sp.tipo = 'satisfaccion'
