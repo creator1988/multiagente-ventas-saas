@@ -30,6 +30,9 @@
     },
     "app/api/cron/reactivacion/route.ts": {
       "maxDuration": 60
+    },
+    "app/api/cron/seguimiento-postventa/route.ts": {
+      "maxDuration": 60
     }
   }
 }
